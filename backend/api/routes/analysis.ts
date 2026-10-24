@@ -54,7 +54,12 @@ export const analysisRoutes: RouteDef[] = [
         throw new Error(`Database error listing analysis runs: ${error.message}`);
       }
 
-      return { runs: runs || [] };
+      const formattedRuns = (runs || []).map((r: any) => ({
+        ...r,
+        tasks: r.analysis_tasks || [],
+      }));
+
+      return { runs: formattedRuns };
     },
   },
 
