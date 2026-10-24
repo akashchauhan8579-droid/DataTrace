@@ -187,10 +187,10 @@ export const analysisRoutes: RouteDef[] = [
         throw new Error(`Failed to create analysis run: ${runError?.message}`);
       }
 
-      // 4. Default task pipeline if not specified
+      // 4. Default task pipeline if not specified (only queue registered prompts)
       const taskTypes = input.taskTypes && input.taskTypes.length > 0
         ? input.taskTypes
-        : ['extraction', 'response_analysis', 'friction_analysis', 'contradiction_consolidation'];
+        : ['extraction', 'contradiction_consolidation'];
 
       const provider = process.env.AI_PROVIDER || 'mock';
       const model = process.env.GROQ_MODEL || process.env.AI_MODEL || 'qwen/qwen3.8-27b';

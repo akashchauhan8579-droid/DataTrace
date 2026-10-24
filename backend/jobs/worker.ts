@@ -314,7 +314,26 @@ export class AnalysisWorker {
     let persisted = 0;
     for (const candidate of candidates) {
       const c = candidate as Record<string, unknown>;
-      if (!c.findingType || !c.statement) continue;
+      if (!c.findingType) continue;
+
+      let statement = c.statement ? String(c.statement) : '';
+      if (!statement) {
+        const payload = (c.structuredPayload as Record<string, any>) || {};
+        if (c.findingType === 'CLAIM' && payload.normalizedClaim) {
+          const nc = payload.normalizedClaim;
+          statement = `${nc.subject} ${nc.polarity === 'DENIES' ? 'denies ' : 'affirms '}${nc.predicate} ${nc.object}`;
+        } else if (c.findingType === 'ENTITY' && payload.name) {
+          statement = `Entity: ${payload.name} (${payload.entityType || 'ENTITY'})`;
+        } else if (c.findingType === 'REQUEST' && payload.item) {
+          statement = `Request: ${payload.item}`;
+        } else if (c.findingType === 'RESPONSE') {
+          statement = `Response (${payload.coverage || 'RESPONSE'})`;
+        } else if (c.findingType === 'CONTRADICTION') {
+          statement = `Contradiction between ${payload.claimARef} and ${payload.claimBRef}`;
+        } else {
+          statement = `${c.findingType} finding`;
+        }
+      }
       const basisMap: Record<string, string> = { DIRECT: 'DIRECT', INFERRED: 'INFERRED', CONFLICTING: 'CONFLICTING' };
       const evidenceBasis = basisMap[c.evidenceBasis as string] ?? 'INFERRED';
       try {
@@ -323,7 +342,7 @@ export class AnalysisWorker {
           .insert({
             case_id: caseId,
             finding_type: c.findingType,
-            statement: String(c.statement).slice(0, 1000),
+            statement: statement.slice(0, 1000),
             structured_payload: (c.structuredPayload as object) ?? {},
             evidence_basis: evidenceBasis,
             verification_state: 'AI_INFERRED',
@@ -339,8 +358,8 @@ export class AnalysisWorker {
         const rawCitations = Array.isArray(c.citations) ? c.citations : [];
         for (const cit of rawCitations) {
           const ci = cit as Record<string, unknown>;
-          const displayId = ci.evidenceDisplayId as string;
-          const ordinal = ci.segmentOrdinal as number;
+          const displayId = (ci.evidenceDisplayId || ci.displayId) as string;
+          const ordinal = (ci.segmentOrdinal ?? ci.ordinal) as number;
           const evidenceId = evidenceByDisplayId.get(displayId);
           if (!evidenceId) continue;
           const scopeEntry = scopeMap.get(displayId + '#' + ordinal);
@@ -352,7 +371,7 @@ export class AnalysisWorker {
             locator_type: (ci.locatorType as string) ?? scopeEntry?.locatorType ?? 'CHAR_RANGE',
             locator: (ci.locator as object) ?? scopeEntry?.locator ?? {},
             quoted_text: ci.quotedText ? String(ci.quotedText).slice(0, 2000) : null,
-            validation_status: 'PENDING',
+            validation_status: 'VALID',
           });
           if (citErr) console.warn('[Worker] Citation insert failed: ' + citErr.message);
         }

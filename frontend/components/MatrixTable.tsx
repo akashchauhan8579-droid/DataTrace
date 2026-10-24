@@ -28,18 +28,18 @@ export function MatrixTable({ matrix }: MatrixTableProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-hairline">
-              {matrix.links.map((link, idx) => {
-                const conf = STATUS_LABELS[link.status] || STATUS_LABELS.UNCLEAR;
+              {matrix.links.map((link: any, idx) => {
+                const conf = STATUS_LABELS[link.status as MatrixStatus] || STATUS_LABELS.UNCLEAR;
                 return (
                   <tr key={idx} className="hover:bg-paper/40 transition-colors">
-                    <td className="p-3 font-semibold text-ink">{link.requestId}</td>
-                    <td className="p-3 font-semibold text-ink">{link.responseId}</td>
+                    <td className="p-3 font-semibold text-ink">{link.requestDisplayId || link.requestId}</td>
+                    <td className="p-3 font-semibold text-ink">{link.responseDisplayId || link.responseId}</td>
                     <td className="p-3">
                       <span className={`inline-block px-2 py-0.5 rounded border text-[10px] font-medium ${conf.className}`}>
                         {conf.label}
                       </span>
                     </td>
-                    <td className="p-3 font-sans text-muted-ink text-xs">{link.rationale}</td>
+                    <td className="p-3 font-sans text-muted-ink text-xs">{link.rationale || link.coverage || 'Correlated'}</td>
                   </tr>
                 );
               })}
@@ -61,17 +61,21 @@ export function MatrixTable({ matrix }: MatrixTableProps) {
           </div>
 
           <ul className="space-y-2">
-            {matrix.unansweredRequests.map((reqId, i) => (
-              <li
-                key={i}
-                className="flex items-center justify-between p-3 bg-paper rounded border border-hairline text-xs font-mono"
-              >
-                <span className="font-semibold text-ink">{reqId}</span>
-                <span className="px-2 py-0.5 rounded border border-red-200 bg-red-50 text-[10px] text-red-700">
-                  No response found in case record
-                </span>
-              </li>
-            ))}
+            {matrix.unansweredRequests.map((req: any, i) => {
+              const display = typeof req === 'object' ? req.requestDisplayId || req.requestFindingId : req;
+              const wording = typeof req === 'object' ? req.wording || 'No response found in case record' : 'No response found in case record';
+              return (
+                <li
+                  key={i}
+                  className="flex items-center justify-between p-3 bg-paper rounded border border-hairline text-xs font-mono"
+                >
+                  <span className="font-semibold text-ink">{display}</span>
+                  <span className="px-2 py-0.5 rounded border border-red-200 bg-red-50 text-[10px] text-red-700">
+                    {wording}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
