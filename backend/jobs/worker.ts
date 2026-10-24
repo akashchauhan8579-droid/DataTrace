@@ -285,6 +285,83 @@ export class AnalysisWorker {
     }
 
     console.log(`[Worker] Task ${task.id} COMPLETED (latency=${result.latency_ms ?? 0}ms)`);
+
+    // Persist candidate findings and citations into DB for display in UI
+    if (task.task_type === 'extraction' || task.task_type === 'response_analysis' || task.task_type === 'friction_analysis') {
+      await this.persistFindings(run.case_id, task.id, result.validated_output, scopeMap);
+    }
+  }
+
+  private async persistFindings(
+    caseId: string,
+    taskId: string,
+    validatedOutput: unknown,
+    scopeMap: ScopeMap
+  ): Promise<void> {
+    const output = validatedOutput as Record<string, unknown>;
+    const candidates: unknown[] = Array.isArray(output?.candidates) ? output.candidates : [];
+    if (candidates.length === 0) {
+      console.log('[Worker] No candidates to persist for task ' + taskId);
+      return;
+    }
+    const { data: evidenceItems } = await this.admin
+      .from('evidence_items')
+      .select('id, display_id')
+      .eq('case_id', caseId);
+    const evidenceByDisplayId = new Map<string, string>(
+      (evidenceItems || []).map((e: { id: string; display_id: string }) => [e.display_id, e.id])
+    );
+    let persisted = 0;
+    for (const candidate of candidates) {
+      const c = candidate as Record<string, unknown>;
+      if (!c.findingType || !c.statement) continue;
+      const basisMap: Record<string, string> = { DIRECT: 'DIRECT', INFERRED: 'INFERRED', CONFLICTING: 'CONFLICTING' };
+      const evidenceBasis = basisMap[c.evidenceBasis as string] ?? 'INFERRED';
+      try {
+        const { data: finding, error: fErr } = await this.admin
+          .from('findings')
+          .insert({
+            case_id: caseId,
+            finding_type: c.findingType,
+            statement: String(c.statement).slice(0, 1000),
+            structured_payload: (c.structuredPayload as object) ?? {},
+            evidence_basis: evidenceBasis,
+            verification_state: 'AI_INFERRED',
+            candidate_confidence: typeof c.candidateConfidence === 'number' ? c.candidateConfidence : null,
+            source_task_id: taskId,
+          })
+          .select('id, case_id')
+          .single();
+        if (fErr || !finding) {
+          console.warn('[Worker] Could not insert finding: ' + fErr?.message);
+          continue;
+        }
+        const rawCitations = Array.isArray(c.citations) ? c.citations : [];
+        for (const cit of rawCitations) {
+          const ci = cit as Record<string, unknown>;
+          const displayId = ci.evidenceDisplayId as string;
+          const ordinal = ci.segmentOrdinal as number;
+          const evidenceId = evidenceByDisplayId.get(displayId);
+          if (!evidenceId) continue;
+          const scopeEntry = scopeMap.get(displayId + '#' + ordinal);
+          const { error: citErr } = await this.admin.from('citations').insert({
+            case_id: caseId,
+            finding_id: finding.id,
+            evidence_id: evidenceId,
+            segment_id: scopeEntry?.segmentId ?? null,
+            locator_type: (ci.locatorType as string) ?? scopeEntry?.locatorType ?? 'CHAR_RANGE',
+            locator: (ci.locator as object) ?? scopeEntry?.locator ?? {},
+            quoted_text: ci.quotedText ? String(ci.quotedText).slice(0, 2000) : null,
+            validation_status: 'PENDING',
+          });
+          if (citErr) console.warn('[Worker] Citation insert failed: ' + citErr.message);
+        }
+        persisted++;
+      } catch (e) {
+        console.warn('[Worker] Skipping candidate due to error: ' + (e instanceof Error ? e.message : String(e)));
+      }
+    }
+    console.log('[Worker] Persisted ' + persisted + '/' + candidates.length + ' findings for task ' + taskId);
   }
 
   private async failTask(task: QueuedTask, reason: string): Promise<void> {

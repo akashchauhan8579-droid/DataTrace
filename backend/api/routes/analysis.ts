@@ -168,10 +168,8 @@ export const analysisRoutes: RouteDef[] = [
         );
       }
 
-      // Build evidence scope array
-      const evidenceScope = eligibleEvidence.map((e) => ({
-        evidenceDisplayId: e.display_id,
-      }));
+      // Build evidence scope array (array of display IDs for worker scope parser)
+      const evidenceScope = eligibleEvidence.map((e) => e.display_id);
 
       // 3. Create analysis_runs record
       const { data: run, error: runError } = await admin
