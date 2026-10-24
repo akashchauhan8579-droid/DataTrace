@@ -124,7 +124,7 @@ export const analysisRoutes: RouteDef[] = [
       // 1. Verify case ownership
       const { data: caseRow } = await db
         .from('cases')
-        .select('id, consent_status')
+        .select('id')
         .eq('id', params.id)
         .eq('owner_id', user.id)
         .single();
