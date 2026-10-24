@@ -223,17 +223,22 @@ export interface ValidationDetails {
 
 // ─── Audit ────────────────────────────────────────────────────────────────────
 export interface AuditEvent {
-  id: string;
-  case_id: string;
+  id?: string;
+  seq?: number;
+  case_seq?: number;
+  case_id?: string;
   actor_type: string;
   actor_id: string;
   entity_type: string;
   entity_id: string;
   action: string;
   metadata: Record<string, unknown>;
-  created_at: string;
-  previous_event_id: string | null;
-  chain_hash: string | null;
+  created_at?: string;
+  occurred_at?: string;
+  previous_event_id?: string | null;
+  prev_hash?: string | null;
+  row_hash?: string | null;
+  chain_hash?: string | null;
 }
 
 // ─── API Error Envelope ───────────────────────────────────────────────────────

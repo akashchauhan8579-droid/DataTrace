@@ -82,29 +82,39 @@ export default function AuditPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {events.map((ev, index) => (
-                <div
-                  key={ev.id}
-                  className="bg-night-2 border border-white/10 rounded-sm p-4 font-mono text-xs hover:border-amber/40 transition-colors"
-                >
-                  <div className="flex items-center justify-between text-white/40 text-[10px] mb-2 border-b border-white/5 pb-1">
-                    <span>EVENT #{events.length - index} · {ev.action}</span>
-                    <span>{new Date(ev.created_at).toLocaleString()}</span>
-                  </div>
+              {events.map((ev, index) => {
+                const eventNum = ev.case_seq || ev.seq || (events.length - index);
+                const eventTime = ev.occurred_at || ev.created_at;
+                const hashDisplay = ev.row_hash
+                  ? `${ev.row_hash.slice(0, 8)}…`
+                  : ev.id
+                  ? `${ev.id.slice(0, 8)}…`
+                  : `#${eventNum}`;
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-white/70 text-[11px] mb-2">
-                    <div>Entity: <strong className="text-white">{ev.entity_type}</strong></div>
-                    <div>Actor: <strong className="text-white">{ev.actor_type}</strong></div>
-                    <div>Event ID: <span className="text-white/50">{ev.id.slice(0, 8)}…</span></div>
-                  </div>
+                return (
+                  <div
+                    key={ev.id || ev.seq || index}
+                    className="bg-night-2 border border-white/10 rounded-sm p-4 font-mono text-xs hover:border-amber/40 transition-colors"
+                  >
+                    <div className="flex items-center justify-between text-white/40 text-[10px] mb-2 border-b border-white/5 pb-1">
+                      <span>EVENT #{eventNum} · {ev.action}</span>
+                      <span>{eventTime ? new Date(eventTime).toLocaleString() : ''}</span>
+                    </div>
 
-                  {ev.metadata && Object.keys(ev.metadata).length > 0 && (
-                    <pre className="text-[10px] bg-black/40 p-2 rounded text-amber/90 overflow-x-auto">
-                      {JSON.stringify(ev.metadata, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              ))}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-white/70 text-[11px] mb-2">
+                      <div>Entity: <strong className="text-white">{ev.entity_type}</strong></div>
+                      <div>Actor: <strong className="text-white">{ev.actor_type}</strong></div>
+                      <div>Ledger Hash: <span className="text-white/50">{hashDisplay}</span></div>
+                    </div>
+
+                    {ev.metadata && Object.keys(ev.metadata).length > 0 && (
+                      <pre className="text-[10px] bg-black/40 p-2 rounded text-amber/90 overflow-x-auto">
+                        {JSON.stringify(ev.metadata, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
