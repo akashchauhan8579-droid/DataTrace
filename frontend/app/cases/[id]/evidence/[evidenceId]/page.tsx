@@ -85,7 +85,7 @@ export default function EvidenceViewerPage() {
               <button
                 onClick={handleDownload}
                 disabled={downloading}
-                className="bg-paper-2 border border-hairline hover:border-ink px-4 py-2 text-xs font-mono uppercase tracking-wider text-ink rounded-sm transition-colors"
+                className="bg-copper text-paper hover:bg-umber px-4 py-2 text-xs font-mono uppercase tracking-wider font-semibold rounded-sm transition-colors shadow-xs"
               >
                 {downloading ? 'Authorizing…' : 'Download Original ↓'}
               </button>

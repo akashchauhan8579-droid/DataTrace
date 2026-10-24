@@ -201,7 +201,7 @@ export default function CaseDashboardPage() {
                   <button
                     onClick={() => setShowConsent(true)}
                     disabled={analyzing || evidence.length === 0}
-                    className="w-full bg-ink text-paper py-2.5 px-4 text-xs font-mono uppercase tracking-wider rounded-sm hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                    className="w-full bg-copper text-paper py-2.5 px-4 text-xs font-mono uppercase tracking-wider font-semibold rounded-sm hover:bg-umber transition-colors disabled:opacity-50 shadow-xs"
                   >
                     {analyzing
                       ? 'Executing Tasks...'

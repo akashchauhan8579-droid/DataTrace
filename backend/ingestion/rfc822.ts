@@ -12,11 +12,15 @@ export interface EmailIngestionOptions {
  * Master Spec v1.4 §5.1, §5.4, §13.1.
  */
 export async function parseEmail(
-  rawEml: Buffer | string,
+  rawEml: Buffer | Uint8Array | string,
   options: EmailIngestionOptions = {}
 ): Promise<IngestionResult> {
   const shouldStripFooters = options.stripFooters ?? true;
-  const buffer = typeof rawEml === 'string' ? Buffer.from(rawEml, 'utf8') : rawEml;
+  const buffer = Buffer.isBuffer(rawEml)
+    ? rawEml
+    : typeof rawEml === 'string'
+      ? Buffer.from(rawEml, 'utf8')
+      : Buffer.from(rawEml);
   const sha256 = computeSha256(buffer);
   const sizeBytes = buffer.length;
 

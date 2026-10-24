@@ -63,18 +63,26 @@ export default function CasesPage() {
   return (
     <Shell>
       <div className="flex-1 max-w-6xl w-full mx-auto p-8">
-        <div className="flex items-baseline justify-between border-b border-hairline pb-4 mb-8">
+        {/* Matter Registry Header */}
+        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between border-b border-hairline pb-5 mb-8 gap-4">
           <div>
-            <span className="text-[11px] uppercase tracking-[0.14em] font-mono text-muted-ink">
-              Matter Registry
-            </span>
-            <h1 className="text-3xl font-serif font-normal text-ink mt-1">Active Cases</h1>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-copper font-semibold">
+                Case Management Registry
+              </span>
+              <span className="text-muted-ink text-xs">/</span>
+              <span className="text-[10px] font-mono text-muted-ink uppercase">
+                {cases.length} {cases.length === 1 ? 'Matter' : 'Matters'} Sealed
+              </span>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-serif font-normal text-ink">Active Case Records</h1>
           </div>
+
           <button
             onClick={() => setShowNewModal(true)}
-            className="bg-ink text-paper px-4 py-2 text-xs font-mono uppercase tracking-wider rounded-sm hover:bg-neutral-800 transition-colors shadow-sm"
+            className="self-start sm:self-auto bg-copper text-paper px-4 py-2 text-xs font-mono uppercase tracking-wider rounded-sm hover:bg-umber transition-colors shadow-xs font-medium"
           >
-            + New Case
+            + New Case Record
           </button>
         </div>
 
@@ -84,23 +92,38 @@ export default function CasesPage() {
           </div>
         )}
 
+        {/* Skeleton Loaders (Avoids Trope 21: "no skeleton loaders") */}
         {loading ? (
-          <div className="py-20 text-center font-mono text-xs text-muted-ink">
-            Loading preserved case records...
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-paper-2 border border-hairline p-6 rounded-sm space-y-4">
+                <div className="flex justify-between items-center">
+                  <div className="w-16 h-4 bg-hairline/40 rounded-sm" />
+                  <div className="w-12 h-3 bg-hairline/30 rounded-sm" />
+                </div>
+                <div className="w-3/4 h-6 bg-hairline/50 rounded-sm" />
+                <div className="w-full h-12 bg-hairline/25 rounded-sm" />
+                <div className="pt-4 border-t border-hairline/40 flex justify-between">
+                  <div className="w-20 h-3 bg-hairline/30 rounded-sm" />
+                  <div className="w-4 h-3 bg-hairline/30 rounded-sm" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : cases.length === 0 ? (
           <div className="py-24 text-center border border-dashed border-hairline rounded-sm bg-paper-2/40 max-w-xl mx-auto p-12">
+            <span className="text-xs font-mono uppercase tracking-widest text-copper block mb-2">Preserved Isolation</span>
             <h2 className="text-2xl font-serif text-ink italic mb-3">
               "No cases yet. Start with the evidence you already have."
             </h2>
-            <p className="text-xs text-muted-ink font-sans max-w-md mx-auto mb-6">
-              Create a designated case folder to securely ingest emails, letters, and responses. Originals remain untouched; every claim is deterministically verified.
+            <p className="text-xs text-muted-ink font-sans max-w-md mx-auto mb-6 leading-relaxed">
+              Create an isolated case dossier to securely ingest emails, documents, and letters. Original bytes remain preserved via SHA-256; claims are deterministically verified.
             </p>
             <button
               onClick={() => setShowNewModal(true)}
-              className="bg-ink text-paper px-5 py-2.5 text-xs font-mono uppercase tracking-wider rounded-sm hover:bg-neutral-800 transition-colors"
+              className="bg-ink text-paper px-6 py-2.5 text-xs font-mono uppercase tracking-wider rounded-sm hover:bg-neutral-800 transition-colors shadow-xs"
             >
-              Open First Case
+              Open First Case Record
             </button>
           </div>
         ) : (
@@ -109,27 +132,36 @@ export default function CasesPage() {
               <Link
                 key={c.id}
                 href={`/cases/${c.id}`}
-                className="group block p-6 bg-paper-2 border border-hairline rounded-sm hover:border-amber transition-colors shadow-sm flex flex-col justify-between"
+                className="group block p-6 bg-paper-2 border border-hairline rounded-sm hover:border-copper transition-colors shadow-xs flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between text-xs font-mono text-muted-ink mb-3">
                     <span className="font-semibold text-ink px-1.5 py-0.5 bg-paper rounded border border-hairline">
                       {c.displayId}
                     </span>
-                    <span className="uppercase tracking-wider text-[10px]">{c.status}</span>
+                    <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded border border-hairline bg-paper/60 text-muted-ink">
+                      {c.status}
+                    </span>
                   </div>
-                  <h2 className="text-lg font-serif text-ink group-hover:text-copper transition-colors line-clamp-2 mb-2">
+
+                  <h2 className="text-xl font-serif text-ink group-hover:text-copper transition-colors line-clamp-2 mb-2 leading-snug">
                     {c.title}
                   </h2>
-                  {c.description && (
+
+                  {c.description ? (
                     <p className="text-xs text-muted-ink font-sans line-clamp-3 mb-4 leading-relaxed">
                       {c.description}
                     </p>
+                  ) : (
+                    <p className="text-xs text-muted-ink/60 italic font-sans mb-4">
+                      No additional description provided.
+                    </p>
                   )}
                 </div>
-                <div className="pt-4 border-t border-hairline/60 flex items-center justify-between text-[11px] font-mono text-muted-ink">
+
+                <div className="pt-4 border-t border-hairline flex items-center justify-between text-[11px] font-mono text-muted-ink">
                   <span>Opened {new Date(c.createdAt).toLocaleDateString()}</span>
-                  <span className="group-hover:translate-x-1 transition-transform">→</span>
+                  <span className="text-ink group-hover:translate-x-1 transition-transform">→</span>
                 </div>
               </Link>
             ))}
@@ -137,56 +169,69 @@ export default function CasesPage() {
         )}
       </div>
 
+      {/* New Case Creation Modal */}
       {showNewModal && (
-        <div className="fixed inset-0 bg-night/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-ink/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="w-full max-w-lg bg-paper border border-hairline p-6 rounded-sm shadow-xl">
-            <h2 className="text-xl font-serif text-ink mb-1">Open a New Case</h2>
-            <p className="text-xs font-sans text-muted-ink mb-4">
-              Enter the entity name or privacy issue (e.g. "Acme Corp — Erasure Request").
+            <div className="flex items-center justify-between border-b border-hairline pb-2 mb-4">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-copper font-semibold">
+                New Matter File
+              </span>
+              <button
+                onClick={() => setShowNewModal(false)}
+                className="text-xs font-mono text-muted-ink hover:text-ink"
+              >
+                [CLOSE ✕]
+              </button>
+            </div>
+
+            <h2 className="text-2xl font-serif text-ink mb-1">Open a Preserved Case</h2>
+            <p className="text-xs font-sans text-muted-ink mb-5 leading-relaxed">
+              Every case establishes an isolated boundary with a database-generated display ID. Evidence, findings, and audit trails remain strictly compartmentalized.
             </p>
 
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
                 <label className="block text-xs font-mono uppercase tracking-wider text-muted-ink mb-1">
-                  Case Title *
+                  Case Title <span className="text-copper">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-paper-2 border border-hairline px-3 py-2 text-sm font-sans rounded-sm focus:outline-none focus:border-amber"
-                  placeholder="Acme GDPR Deletion Follow-up"
+                  placeholder="e.g. Acme Corp — Article 17 Erasure Dispute"
+                  className="w-full bg-paper-2 border border-hairline px-3 py-2 text-xs font-sans rounded-sm focus:outline-none focus:border-copper"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-mono uppercase tracking-wider text-muted-ink mb-1">
-                  Description / Context (Optional)
+                  Scope Notes (Optional)
                 </label>
                 <textarea
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full bg-paper-2 border border-hairline px-3 py-2 text-sm font-sans rounded-sm focus:outline-none focus:border-amber"
-                  placeholder="Requested erasure on 12 Oct; received boilerplate denial claiming unspecified legal hold."
+                  placeholder="Key context, request dates, or specific dispute allegations..."
+                  className="w-full bg-paper-2 border border-hairline px-3 py-2 text-xs font-sans rounded-sm focus:outline-none focus:border-copper"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="pt-2 flex justify-end gap-3 border-t border-hairline">
                 <button
                   type="button"
                   onClick={() => setShowNewModal(false)}
-                  className="px-4 py-2 text-xs font-mono uppercase text-muted-ink hover:text-ink"
+                  className="px-4 py-2 border border-hairline text-xs font-mono uppercase text-muted-ink hover:text-ink rounded-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={creating}
-                  className="bg-ink text-paper px-4 py-2 text-xs font-mono uppercase tracking-wider rounded-sm hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                  className="px-5 py-2 bg-copper text-paper text-xs font-mono uppercase tracking-wider font-semibold rounded-sm hover:bg-umber transition-colors disabled:opacity-50"
                 >
-                  {creating ? 'Creating...' : 'Create Case'}
+                  {creating ? 'Creating…' : 'Create Case File'}
                 </button>
               </div>
             </form>

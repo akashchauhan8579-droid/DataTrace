@@ -165,4 +165,43 @@ export const api = {
     list: (caseId: string) =>
       apiFetch<{ events: AuditEvent[] }>(`cases/${caseId}/audit`),
   },
+
+  gmail: {
+    getStatus: () =>
+      apiFetch<{ connected: boolean; googleEmail?: string; status?: 'ACTIVE' | 'EXPIRED' }>('gmail/status'),
+    connect: () =>
+      apiFetch<{ authUrl: string; state: string }>('gmail/connect', { method: 'POST' }),
+    listThreads: (q?: string, pageToken?: string) => {
+      const params = new URLSearchParams();
+      if (q) params.set('q', q);
+      if (pageToken) params.set('pageToken', pageToken);
+      const qs = params.toString();
+      return apiFetch<{
+        threads: Array<{
+          threadId: string;
+          subject: string;
+          from: string;
+          snippet: string;
+          messageCount: number;
+          lastMessageAt: string;
+        }>;
+        nextPageToken?: string;
+      }>(`gmail/threads${qs ? `?${qs}` : ''}`);
+    },
+    importThread: (caseId: string, threadId: string, maxMessages = 10) =>
+      apiFetch<{
+        items: Array<{
+          id: string;
+          displayId: string;
+          sha256: string;
+          duplicate: boolean;
+        }>;
+        truncated: boolean;
+      }>(`cases/${caseId}/evidence/gmail`, {
+        method: 'POST',
+        body: JSON.stringify({ threadId, maxMessages }),
+      }),
+    disconnect: () =>
+      apiFetch<{ disconnected: boolean }>('gmail/connection', { method: 'DELETE' }),
+  },
 };
