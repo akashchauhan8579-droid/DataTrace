@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paper: #EFEBE2;
+  --paper-2: #E6E1D6;
+  --ink: #1B1814;
+  --muted-ink: #6B645A;
+  --hairline: rgba(27, 24, 20, 0.14);
+  --night: #0C0B0A;
+  --night-2: #151311;
+  --on-night: #EDE6DA;
+  --amber: #D98A4E;
+  --copper: #B5562F;
+  --umber: #6E3B2A;
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+}
