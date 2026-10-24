@@ -1,0 +1,123 @@
+{
+  "scenarioId": "3",
+  "name": "CONTRADICTORY_CLAIMS",
+  "description": "Matching claimKey with opposite polarity reaches CONTRADICTED mechanically",
+  "evidence": [
+    {
+      "id": "33333333-0001-4000-8000-000000000001",
+      "displayId": "EV-101",
+      "status": "PROCESSED",
+      "sha256": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "headerText": "From: privacy@acme.example\nTo: user@example.com",
+      "date": "2024-03-01T10:00:00Z",
+      "segments": [
+        {
+          "id": "33333333-0001-4000-8000-000000000011",
+          "ordinal": 1,
+          "locatorType": "PAGE",
+          "locator": { "page": 1 },
+          "text": "We have deleted your personal data from our systems."
+        }
+      ]
+    },
+    {
+      "id": "33333333-0002-4000-8000-000000000002",
+      "displayId": "EV-102",
+      "status": "PROCESSED",
+      "sha256": "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+      "headerText": "From: support@acme.example\nTo: user@example.com",
+      "date": "2024-03-05T10:00:00Z",
+      "segments": [
+        {
+          "id": "33333333-0002-4000-8000-000000000021",
+          "ordinal": 1,
+          "locatorType": "PAGE",
+          "locator": { "page": 1 },
+          "text": "We never deleted your personal data from our systems."
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "ref": "clm1",
+      "findingType": "CLAIM",
+      "statement": "Acme Corp deleted personal data.",
+      "evidenceBasis": "DIRECT",
+      "candidateConfidence": 0.95,
+      "citations": [
+        {
+          "evidenceDisplayId": "EV-101",
+          "segmentOrdinal": 1,
+          "locatorType": "PAGE",
+          "locator": { "page": 1 },
+          "quotedText": "We have deleted your personal data from our systems."
+        }
+      ],
+      "structuredPayload": {
+        "normalizedClaim": {
+          "subject": "Acme Corp",
+          "predicate": "deletes_data",
+          "object": "personal data",
+          "polarity": "AFFIRMS"
+        },
+        "speaker": "ORGANIZATION"
+      }
+    },
+    {
+      "ref": "clm2",
+      "findingType": "CLAIM",
+      "statement": "Acme Corp never deleted personal data.",
+      "evidenceBasis": "DIRECT",
+      "candidateConfidence": 0.95,
+      "citations": [
+        {
+          "evidenceDisplayId": "EV-102",
+          "segmentOrdinal": 1,
+          "locatorType": "PAGE",
+          "locator": { "page": 1 },
+          "quotedText": "We never deleted your personal data from our systems."
+        }
+      ],
+      "structuredPayload": {
+        "normalizedClaim": {
+          "subject": "Acme Corp",
+          "predicate": "deletes_data",
+          "object": "personal data",
+          "polarity": "DENIES"
+        },
+        "speaker": "ORGANIZATION"
+      }
+    },
+    {
+      "ref": "cnt1",
+      "findingType": "CONTRADICTION",
+      "statement": "Conflict between deletion affirmation and denial.",
+      "evidenceBasis": "CONFLICTING",
+      "candidateConfidence": 0.99,
+      "citations": [
+        {
+          "evidenceDisplayId": "EV-101",
+          "segmentOrdinal": 1,
+          "locatorType": "PAGE",
+          "locator": { "page": 1 },
+          "quotedText": "We have deleted your personal data from our systems."
+        }
+      ],
+      "structuredPayload": {
+        "claimARef": "clm1",
+        "claimBRef": "clm2"
+      }
+    }
+  ],
+  "goldenExpectations": {
+    "acceptedCount": 3,
+    "rejectedCount": 0,
+    "finalStates": {
+      "clm1": "VERIFIED",
+      "clm2": "VERIFIED",
+      "cnt1": "CONTRADICTED"
+    },
+    "contradictionMode": "MECHANICAL"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "scenarioId": "5",
+  "name": "MISSING_EVIDENCE",
+  "description": "Fabricated quote fails citation_integrity.v1, citation marked INVALID, finding persisted UNVERIFIED",
+  "evidence": [
+    {
+      "id": "55555555-0001-4000-8000-000000000001",
+      "displayId": "EV-101",
+      "status": "PROCESSED",
+      "sha256": "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
+      "headerText": "From: privacy@acme.example\nTo: user@example.com",
+      "date": "2024-03-01T10:00:00Z",
+      "segments": [
+        {
+          "id": "55555555-0001-4000-8000-000000000011",
+          "ordinal": 1,
+          "locatorType": "PAGE",
+          "locator": { "page": 1 },
+          "text": "Welcome to Acme Corp. How can we help you today?"
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "ref": "clm1",
+      "findingType": "CLAIM",
+      "statement": "Acme Corp permanently deleted customer data.",
+      "evidenceBasis": "DIRECT",
+      "candidateConfidence": 0.85,
+      "citations": [
+        {
+          "evidenceDisplayId": "EV-101",
+          "segmentOrdinal": 1,
+          "locatorType": "PAGE",
+          "locator": { "page": 1 },
+          "quotedText": "We permanently deleted your entire data history."
+        }
+      ],
+      "structuredPayload": {
+        "normalizedClaim": {
+          "subject": "Acme Corp",
+          "predicate": "deletes_data",
+          "object": "data history",
+          "polarity": "AFFIRMS"
+        },
+        "speaker": "ORGANIZATION"
+      }
+    }
+  ],
+  "goldenExpectations": {
+    "acceptedCount": 1,
+    "rejectedCount": 0,
+    "finalStates": {
+      "clm1": "UNVERIFIED"
+    },
+    "citationStatus": "INVALID"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "datatrace-practice",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "worker": "tsx backend/jobs/run.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "dotenv": "^18.0.8",
+    "mailparser": "^3.10.0",
+    "pdf-parse": "^2.4.5",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "20.17.10",
+    "@types/pdf-parse": "^1.1.5",
+    "tsx": "^4.23.15",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  }
+}

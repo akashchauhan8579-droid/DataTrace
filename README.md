@@ -4,13 +4,13 @@
 
 DataTrace turns fragmented privacy-related evidence (emails, documents, screenshots, requests, responses) into a preserved case record, structured intelligence, deterministically verified findings and an evidence-grounded action report.
 
-> **Status: specification stage.** The full design lives in [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) (**v1.4.2**, the implementation baseline). No application code exists yet: all product code is written on site at the Hackyard BUILD 2026 finale (IIT Guwahati, 24–25 Oct 2026). Everything below describes what is **specified**, not what is built. This README is updated as features are built and tested, and only then do they lose the word *specified* (spec principle 11, "claim only what is built").
+> **Status: partial implementation (24 Oct 2026).** [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) (**v1.4.2**) remains the target design. This checkout contains working contracts, AI gateway and providers, ingestion, backend API and worker code, and six P0 verification rule modules. The frontend UI, Gmail import, and automated database/pgTAP suite are not implemented. The checks currently passing are `npm test` (31 files, 362 tests) and `npm run typecheck`; this is not yet a complete end-to-end release.
 
 > *DataTrace identifies evidence-related gaps and prepares a reviewable draft; it does not determine legal compliance or provide legal advice.*
 
 ## Disclosure (pre-existing work)
 
-Before the event we had the specification, documentation, synthetic test data and design sketches. All application code, database schema and tests were written during the build window. Third-party libraries and services are listed [below](#third-party-libraries-and-services). *(This statement is edited to match reality on the day and must stay true; spec §2.5.)*
+The specification, documentation, synthetic test data and design sketches predate implementation. Update this disclosure to accurately distinguish pre-existing work from work completed during the event before presenting or publishing the project; the build policy is in spec §2.5. Current runtime dependencies are listed [below](#third-party-libraries-and-services).
 
 ## The problem
 
@@ -18,7 +18,7 @@ People who exercise data rights (GDPR/CCPA access, deletion, correction, opt-out
 
 DataTrace connects the full trail and never confuses an AI inference with a verified finding.
 
-## How it works (specified)
+## Target workflow
 
 ```text
 Evidence in (upload · manual log · Gmail import)
@@ -37,26 +37,40 @@ Two ideas carry the design:
 - **Basis and state are separate.** *How* a finding was derived (`DIRECT`, `OBSERVED`, `INFERRED`, `CONFLICTING`) is shown apart from *how far it has been verified* (`UNVERIFIED`, `AI_INFERRED`, `CORROBORATED`, `VERIFIED`, `CONTRADICTED`).
 - **The model never verifies.** It cites by display ID and segment number (for example `EV-101` #3), never by database ID. Deterministic rules in `verification/` decide what reaches `VERIFIED`. A hash proves a file is unchanged, not that it is true.
 
+## Implemented today
+
+| Area | Current implementation |
+|---|---|
+| Contracts | TypeScript/Zod schemas for findings, citations, payloads, locators and reports, with unit tests. |
+| AI | Consent and minimization gateway, candidate citation resolver, mock provider, Grok and Groq provider adapters, and prompt registry. Live provider credentials are not part of the test run. |
+| Ingestion and backend | SHA-256, `.eml` and PDF parsing, segmentation, API router/adapter, evidence and report routes, and an analysis worker. |
+| Verification | Six P0 rule modules and a deterministic verification engine. |
+| Database | Six SQL migrations are present. No pgTAP tests are currently checked in, so database security and migration acceptance gates remain unverified. |
+| Frontend and Gmail | UI pages/components and Gmail import are not implemented; only the API adapter and placeholder directories exist. |
+
+The backend and unit/synthetic tests are implemented, but the user-facing workflow is not yet complete. Do not present the full target workflow below as a shipped product.
+
 ## Evidence sources
 
 | Source | Tier | Notes |
 |---|---|---|
-| `.eml`, `.txt`, manual log, text-based PDF | P0 | Page-level segments for PDF in P0 |
-| **Gmail import** | **P1-0** | One-shot import of a thread you pick, read-only. **Import, not sync**: there is no background polling. Runs as a Google app in Testing mode with two throwaway accounts holding synthetic emails; never connect a real inbox. `.eml` upload is the fallback |
-| `.docx`, screenshots | P1 | Screenshot text from a model is capped at `AI_INFERRED` |
-| Continuous Gmail sync, HTTP probes, DPDP pack | P2 | Not planned for the weekend |
+| `.eml`, `.txt`, text-based PDF | P0 | Parsers and segmentation are implemented and covered by tests. |
+| Manual log | P0 | Specified; no completed UI workflow. |
+| Gmail import | P1-0 | Not implemented. Do not connect an inbox or claim this feature. |
+| `.docx`, screenshots | P1 | Not implemented. |
+| Continuous Gmail sync, HTTP probes, DPDP pack | P2 | Not implemented/planned beyond the master spec. |
 
 ## Scope tiers
 
 | Tier | Contents | Status |
 |---|---|---|
-| **P0-Core** | Adapter + router, auth and cases, upload with SHA-256 and private storage, consent + Gateway, six P0 rules, findings list, evidence viewer with whole-segment citation navigation, request-response matrix, mechanical contradiction, grounded report with live editor and export, ownership checks, cached demo run | Specified |
-| **P0-Hardening** | Hash-chained audit ledger and verification, double-event audited downloads, automated pgTAP suite, quarantine and demotion cascade, user-confirmed contradictions | Specified. Cut first at Hour 14 |
-| **P1-0** | Gmail import (§5.5 of the spec) | Specified |
-| **P1-A** | Timeline, graph, friction signals, the other P1 rules, exact-range highlighting, DOCX, screenshots, PDF export | Specified |
-| **P2** | Continuous Gmail sync, HTTP probes, DPO routing, DKIM verification, monitoring, personal-data map, DPDP pack, public deployment | Specified |
+| **P0-Core** | Contracts, gateway, providers, ingestion, backend API/worker and six P0 rule modules are present. The frontend, complete end-to-end workflow, and acceptance gates are incomplete. | Partially implemented |
+| **P0-Hardening** | SQL migrations include audit/invariant work, but there is no pgTAP suite and the database gates have not been validated in this checkout. | Partially implemented; unverified |
+| **P1-0** | Gmail import (§5.5 of the spec) | Not implemented |
+| **P1-A** | Timeline, graph, friction signals, remaining P1 rules, exact-range highlighting, DOCX, screenshots and PDF export | Not implemented |
+| **P2** | Continuous Gmail sync, HTTP probes, DPO routing, DKIM verification, monitoring, personal-data map, DPDP pack and public deployment | Not implemented |
 
-Rules live in the build: **0 today** (six P0 rules and five P1 rules are specified).
+Six P0 verification rule modules are present. The five P1 rules in the master spec are not implemented. See the implementation and test status above; passing unit tests do not establish the full release gates.
 
 ## Team and work division
 
@@ -69,7 +83,7 @@ Team Civora builds with **two people** holding the four ownership roles of the s
 
 Handoff: Person 1 freezes the Zod contracts in Hour 0–1 and has the schema ready by Hour 3, and hands over `runExtraction`, `runVerification`, `draftReport` and `assertCaseOwner`. Person 2 builds against `mock` fixtures until they exist.
 
-## Architecture (specified)
+## Target architecture (specified)
 
 ```text
  Browser: Next.js UI (dashboard, evidence viewer, timeline, graph, matrix, report editor, audit view)
@@ -86,70 +100,57 @@ Handoff: Person 1 freezes the Zod contracts in Hour 0–1 and has the schema rea
                      citation resolution
 ```
 
-Stack: TypeScript (strict), npm workspaces (`@datatrace/*`), Next.js 14+ App Router, Tailwind CSS, shadcn/ui, Supabase (Postgres, Auth, private Storage), Zod, React Flow, Vitest, pgTAP. AI is behind an `AIProvider` interface with a mandatory `mock` provider; Grok (xAI) is the development provider. No graph or vector databases, embeddings, Redis, Kafka, WebSockets, external queues or microservices.
+The current package is a strict TypeScript backend/test project using Supabase JS, Zod, `mailparser`, `pdf-parse`, Vitest and `tsx`. The Next.js UI, Tailwind, shadcn/ui, React Flow and pgTAP remain part of the target design, not installed or implemented in this checkout. AI providers are behind an `AIProvider` interface; the mock provider is available for tests.
 
 ## Repository layout (specified)
 
 ```text
-frontend/        Next.js UI and the single API adapter                  (Person 2)
-backend/         router, handlers, ingestion, worker, Gmail integration (Person 2)
+frontend/        API adapter; UI pages/components are not implemented  (Person 2)
+backend/         router, handlers, ingestion and worker                (Person 2)
 ai/              Gateway, providers, prompts                            (Person 1)
 verification/    deterministic rules, no network, no AI imports         (Person 1)
 database/        security helpers incl. assertCaseOwner                 (Person 1)
-supabase/        config, migrations 001–005, seed, pgTAP tests          (Person 1)
+supabase/        migrations 001–006; pgTAP tests not yet present        (Person 1)
 contracts/       shared Zod schemas and types (change protocol, §19.3)
 tests/           synthetic golden scenarios, fixtures, integration
 docs/            MASTER_SPEC.md, api.md, security.md, integration.md
 ```
 
-## Quickstart (intended; verified and finalized when the build lands)
+## Checks
+
+Install dependencies and run the checks from the repository root:
 
 ```bash
-cp .env.example .env        # fill in Supabase and AI keys; leave GMAIL_MODE=mock unless testing Gmail
-npm install
-supabase start              # local Supabase (needs Docker)
-supabase db reset           # applies all migrations and the synthetic seed
-npm run dev                 # web app and API on http://localhost:3000
-npm run worker              # analysis worker
+npm ci
+npm test
+npm run typecheck
 ```
 
-Set `DEMO_MODE=true` to serve the cached, pre-analyzed demo run. The `mock` provider replays recorded output and never spends LLM credits.
+Latest local result: **31 test files and 362 tests passed; typecheck passed**. The test suite uses synthetic/mock data. No pgTAP, browser/component, live-provider, or full database-backed end-to-end run has been verified. `npm run worker` is available but requires the backend environment and database configuration; there is no `npm run dev` UI script in this checkout.
 
-### Gmail import setup (P1-0, optional)
-
-Account setup only; no code is needed for it. Spec §17.2A has the full list.
-
-1. In Google Cloud, create a project and enable the **Gmail API**.
-2. Configure the OAuth consent screen as **External**, publishing status **Testing**.
-3. Add your **two throwaway Gmail accounts** as test users, and put the synthetic Acme emails from `tests/synthetic/acme-deletion/` in them.
-4. Create a **Web** OAuth client with redirect URI `http://localhost:3000/gmail/callback`.
-5. Put the client ID and secret in your local `.env` (never commit it), plus `GMAIL_STATE_SECRET` and `GMAIL_TOKEN_ENC_KEY` (random 32-byte values), and set `GMAIL_MODE=live`.
-
-Google limits to know: Testing-mode apps admit only listed test users (up to 100), show a warning screen to click through, and **expire refresh tokens after 7 days**. The scope `gmail.readonly` is restricted, so Google verification is not pursued. Gmail import needs internet; `.eml` upload and the cached demo work offline.
+The full spec's database-backed quickstart, demo mode and Gmail setup are not currently runnable from this checkout because their required UI/database/Gmail implementation is incomplete.
 
 ## Testing
 
-Synthetic data only: no real personal data anywhere in this repository. Vitest (unit, synthetic runner, component tests) and pgTAP (RLS, grants, storage, display IDs, indexes, audit chain) run in CI. The regression list T01–T29 is in spec §18.2 (T24–T29 cover Gmail import and run against `GMAIL_MODE=mock`, never against Google). The demo case must run twice in a row without a reset.
+Tests and fixtures use synthetic data. Vitest currently runs unit, gateway, backend and synthetic scenario tests (31 files, 362 tests). There are no component tests or pgTAP tests checked in; T24–T29 are not run because Gmail import is not implemented. The spec's twice-without-reset end-to-end demo gate has not been verified.
 
-## Privacy and security (specified, with stated limits)
+## Privacy and security status
 
-- Clients can only `SELECT` through RLS; they never write or delete. Evidence bytes reach a user only through a short-lived, backend-issued signed URL.
-- Models never see or return internal IDs. Evidence is delimited as data, never as instructions.
-- Gmail refresh tokens are encrypted at rest, never returned, logged or audited, and sit in a table that no client role can read.
-- Limits, stated plainly: the audit ledger is tamper-**evident**, not tamper-proof; SHA-256 proves "unchanged since ingestion", not authenticity; provider-side retention is outside DataTrace's control and is never claimed to be zero; direct owner reads of derived tables are scoped by RLS but not audited. See spec §15.
+- The Gateway and resolver are implemented to minimize model input and resolve display-ID citations within task scope. These protections have unit tests; they do not replace database isolation tests.
+- SQL migrations are present, but client grants, RLS, storage bypass, audit-chain integrity and database invariants have not been verified with an automated pgTAP suite in this checkout.
+- Gmail token handling is not implemented because Gmail import is not implemented.
+- SHA-256 indicates whether bytes changed since ingestion; it does not establish that evidence is authentic or true. Provider-side retention is outside DataTrace's control. See spec §15 for the target threat model and limitations.
 
 ## Third-party libraries and services
 
-Next.js, React, Tailwind CSS, shadcn/ui, React Flow, Supabase (Postgres, Auth, Storage, CLI), Zod, `zod-to-json-schema`, `mailparser`, a PDF text-extraction library, `mammoth`, Vitest, pgTAP, GitHub Actions, the xAI (Grok) API as the development AI provider, and the Google OAuth 2.0 and Gmail APIs (P1-0, called with plain `fetch`). The final list is confirmed from `package.json` when the build lands.
+Current package dependencies are listed in `package.json`: Supabase JS, Zod, `zod-to-json-schema`, `mailparser`, `pdf-parse`, Vitest, TypeScript and `tsx`. Grok and Groq adapters are present, but live provider use is not part of automated validation. Next.js, React, Gmail APIs and pgTAP are specified targets, not current package dependencies.
 
 ## Documentation
 
 | File | Purpose |
 |---|---|
 | [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) | The single source of truth: architecture, schema, contracts, rules, delivery plan, tests (v1.4.2) |
-| `docs/api.md` | Endpoint documentation (spec §16) |
-| `docs/security.md` | Threat model and RLS notes (spec §15) |
-| `docs/integration.md` | Live module readiness board, including *specified but not built* items |
+| [`docs/integration.md`](docs/integration.md) | Implementation readiness board; some status entries need refresh against the current test run and modules. |
 
 Any change to architecture, schema, contract or scope is recorded in the spec in the same pull request (spec §19.3).
 

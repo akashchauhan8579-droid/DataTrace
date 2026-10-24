@@ -1,0 +1,136 @@
+{
+  "scenarioId": "1",
+  "name": "NORMAL_RESPONSIVE",
+  "status": "SUCCESS",
+  "analysisResult": {
+    "status": "COMPLETED",
+    "taskId": "task-1",
+    "accepted": 3,
+    "rejected": [],
+    "fallbackUsed": false,
+    "retryCount": 0
+  },
+  "finalFindings": [
+    {
+      "id": "63fde670-d9d2-4c34-8cfa-a5770d058635",
+      "caseId": "86a74876-f2a9-4fe9-9f2d-3f37c24bf8d6",
+      "displayId": "FND-101",
+      "findingType": "REQUEST",
+      "evidenceBasis": "DIRECT",
+      "verificationState": "AI_INFERRED",
+      "sourceUnavailable": false,
+      "statement": "Please delete my account and personal data.",
+      "structuredPayload": {
+        "item": "Delete personal data",
+        "requestType": "DELETION"
+      },
+      "citations": [
+        {
+          "id": "91517a0b-e132-4dad-a59c-c1212f49f374",
+          "evidenceId": "11111111-0001-4000-8000-000000000001",
+          "segmentId": "11111111-0001-4000-8000-000000000011",
+          "quotedText": "Please delete my account and personal data.",
+          "locatorType": "PAGE",
+          "locator": {
+            "page": 1
+          },
+          "validationStatus": "VALID"
+        }
+      ]
+    },
+    {
+      "id": "f51f33e4-6afd-4c28-b268-bb41c6e193e7",
+      "caseId": "86a74876-f2a9-4fe9-9f2d-3f37c24bf8d6",
+      "displayId": "FND-102",
+      "findingType": "RESPONSE",
+      "evidenceBasis": "DIRECT",
+      "verificationState": "AI_INFERRED",
+      "sourceUnavailable": false,
+      "statement": "We have deleted your personal data from our systems.",
+      "structuredPayload": {
+        "addresses": [
+          "FND-101"
+        ],
+        "coverage": "FULL"
+      },
+      "citations": [
+        {
+          "id": "5423a6d7-b6cc-4284-b747-d4b225b2cac0",
+          "evidenceId": "11111111-0002-4000-8000-000000000002",
+          "segmentId": "11111111-0002-4000-8000-000000000021",
+          "quotedText": "We have deleted your personal data from our systems.",
+          "locatorType": "PAGE",
+          "locator": {
+            "page": 1
+          },
+          "validationStatus": "VALID"
+        }
+      ]
+    },
+    {
+      "id": "54cce9ed-4037-49b2-8dbd-154ab4248697",
+      "caseId": "86a74876-f2a9-4fe9-9f2d-3f37c24bf8d6",
+      "displayId": "FND-103",
+      "findingType": "CLAIM",
+      "evidenceBasis": "DIRECT",
+      "verificationState": "VERIFIED",
+      "sourceUnavailable": false,
+      "statement": "Acme Corp deleted customer personal data.",
+      "structuredPayload": {
+        "normalizedClaim": {
+          "subject": "Acme Corp",
+          "predicate": "deletes_data",
+          "object": "personal data",
+          "polarity": "AFFIRMS"
+        },
+        "speaker": "ORGANIZATION"
+      },
+      "citations": [
+        {
+          "id": "6eff8876-a8b4-447b-a083-14ea9d7a1b62",
+          "evidenceId": "11111111-0002-4000-8000-000000000002",
+          "segmentId": "11111111-0002-4000-8000-000000000021",
+          "quotedText": "We have deleted your personal data from our systems.",
+          "locatorType": "PAGE",
+          "locator": {
+            "page": 1
+          },
+          "validationStatus": "VALID"
+        }
+      ]
+    }
+  ],
+  "matrixRows": [
+    {
+      "requestDisplayId": "FND-101",
+      "item": "Delete personal data",
+      "status": "ANSWERED",
+      "responseDisplayIds": [
+        "FND-102"
+      ],
+      "chronology": "OK",
+      "label": "Answered in the record"
+    }
+  ],
+  "reportValidation": {
+    "status": "VALIDATED",
+    "canExport": true,
+    "failingBlockIds": [],
+    "editedAssertionCount": 0
+  },
+  "goldenMatches": {
+    "countsMatch": true,
+    "statesMatch": true,
+    "matrixMatches": true
+  },
+  "metrics": {
+    "schemaAdherence": 1,
+    "citationResolution": 1,
+    "citationPrecision": 1,
+    "extractionRecall": 1,
+    "ruleAccuracy": 1,
+    "falseVerifiedCount": 0,
+    "groundingIntegrity": 1,
+    "crossCaseIsolation": 0
+  }
+}

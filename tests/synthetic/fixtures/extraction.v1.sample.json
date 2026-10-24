@@ -1,0 +1,28 @@
+[
+  {
+    "findingType": "CLAIM",
+    "statement": "Acme Corp retains customer account data for 30 days following an erasure request.",
+    "evidenceBasis": "DIRECT",
+    "candidateConfidence": 0.95,
+    "citations": [
+      {
+        "evidenceDisplayId": "EV-101",
+        "segmentOrdinal": 1,
+        "locatorType": "PAGE",
+        "locator": {
+          "page": 1
+        },
+        "quotedText": "We retain customer account data for 30 days following an erasure request."
+      }
+    ],
+    "structuredPayload": {
+      "normalizedClaim": {
+        "subject": "Acme Corp",
+        "predicate": "retains_data",
+        "object": "customer account data",
+        "polarity": "AFFIRMS"
+      },
+      "speaker": "ORGANIZATION"
+    }
+  }
+]
