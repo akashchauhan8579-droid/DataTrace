@@ -12,8 +12,8 @@
   },
   "finalFindings": [
     {
-      "id": "63fde670-d9d2-4c34-8cfa-a5770d058635",
-      "caseId": "86a74876-f2a9-4fe9-9f2d-3f37c24bf8d6",
+      "id": "f7d4691a-6e17-4370-a181-5b3b922a3244",
+      "caseId": "bd90dc84-fbfd-405a-a4a9-2169b6cff4ea",
       "displayId": "FND-101",
       "findingType": "REQUEST",
       "evidenceBasis": "DIRECT",
@@ -26,7 +26,7 @@
       },
       "citations": [
         {
-          "id": "91517a0b-e132-4dad-a59c-c1212f49f374",
+          "id": "d01cb092-227d-40b2-8a72-bd455341b152",
           "evidenceId": "11111111-0001-4000-8000-000000000001",
           "segmentId": "11111111-0001-4000-8000-000000000011",
           "quotedText": "Please delete my account and personal data.",
@@ -39,8 +39,8 @@
       ]
     },
     {
-      "id": "f51f33e4-6afd-4c28-b268-bb41c6e193e7",
-      "caseId": "86a74876-f2a9-4fe9-9f2d-3f37c24bf8d6",
+      "id": "a2271058-dd98-4bd3-91e1-7c4166f01eac",
+      "caseId": "bd90dc84-fbfd-405a-a4a9-2169b6cff4ea",
       "displayId": "FND-102",
       "findingType": "RESPONSE",
       "evidenceBasis": "DIRECT",
@@ -55,7 +55,7 @@
       },
       "citations": [
         {
-          "id": "5423a6d7-b6cc-4284-b747-d4b225b2cac0",
+          "id": "e409650c-47c5-4231-b8c0-1a57606c0117",
           "evidenceId": "11111111-0002-4000-8000-000000000002",
           "segmentId": "11111111-0002-4000-8000-000000000021",
           "quotedText": "We have deleted your personal data from our systems.",
@@ -68,8 +68,8 @@
       ]
     },
     {
-      "id": "54cce9ed-4037-49b2-8dbd-154ab4248697",
-      "caseId": "86a74876-f2a9-4fe9-9f2d-3f37c24bf8d6",
+      "id": "348a9471-b461-4f7e-86ad-02540f9a6070",
+      "caseId": "bd90dc84-fbfd-405a-a4a9-2169b6cff4ea",
       "displayId": "FND-103",
       "findingType": "CLAIM",
       "evidenceBasis": "DIRECT",
@@ -87,7 +87,7 @@
       },
       "citations": [
         {
-          "id": "6eff8876-a8b4-447b-a083-14ea9d7a1b62",
+          "id": "1dd36669-4dd3-4180-865a-a870f8bef5f9",
           "evidenceId": "11111111-0002-4000-8000-000000000002",
           "segmentId": "11111111-0002-4000-8000-000000000021",
           "quotedText": "We have deleted your personal data from our systems.",
