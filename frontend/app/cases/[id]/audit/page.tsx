@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { AuditEvent } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
 
-export default function AuditPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const caseId = resolvedParams.id;
+export default function AuditPage() {
+  const params = useParams();
+  const caseId = params.id as string;
 
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);

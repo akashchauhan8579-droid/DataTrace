@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Report, Finding, EvidenceDetail, ReportLens } from '@/lib/types';
@@ -9,9 +10,9 @@ import { ReportEditor } from '@/components/ReportEditor';
 import { SegmentView } from '@/components/SegmentView';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
 
-export default function ReportPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const caseId = resolvedParams.id;
+export default function ReportPage() {
+  const params = useParams();
+  const caseId = params.id as string;
 
   const [reports, setReports] = useState<Report[]>([]);
   const [activeReport, setActiveReport] = useState<Report | null>(null);

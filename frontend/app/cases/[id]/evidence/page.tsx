@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, use } from 'react';
+import { useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { SourceType } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
 
-export default function EvidenceUploadPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const caseId = resolvedParams.id;
+export default function EvidenceUploadPage() {
+  const params = useParams();
+  const caseId = params.id as string;
 
   const [mode, setMode] = useState<'FILE' | 'MANUAL'>('FILE');
   const [sourceType, setSourceType] = useState<SourceType>('EMAIL');

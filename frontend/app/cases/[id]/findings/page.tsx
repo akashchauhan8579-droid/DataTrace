@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { Finding } from '@/lib/types';
@@ -8,9 +9,9 @@ import { Shell } from '@/components/Shell';
 import { FindingRow } from '@/components/FindingRow';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
 
-export default function FindingsPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const caseId = resolvedParams.id;
+export default function FindingsPage() {
+  const params = useParams();
+  const caseId = params.id as string;
 
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);

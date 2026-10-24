@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { EvidenceDetail } from '@/lib/types';
@@ -8,14 +9,10 @@ import { Shell } from '@/components/Shell';
 import { SegmentView } from '@/components/SegmentView';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
 
-export default function EvidenceViewerPage({
-  params,
-}: {
-  params: Promise<{ id: string; evidenceId: string }>;
-}) {
-  const resolvedParams = use(params);
-  const caseId = resolvedParams.id;
-  const evidenceId = resolvedParams.evidenceId;
+export default function EvidenceViewerPage() {
+  const params = useParams();
+  const caseId = params.id as string;
+  const evidenceId = params.evidenceId as string;
 
   const [detail, setDetail] = useState<EvidenceDetail | null>(null);
   const [loading, setLoading] = useState(true);

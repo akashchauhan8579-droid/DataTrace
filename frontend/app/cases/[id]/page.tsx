@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '../../../lib/api';
-import type { Case, EvidenceItem, Finding, AnalysisRun } from '../../../lib/types';
-import { Shell } from '../../../components/Shell';
-import { EvidenceCard } from '../../../components/EvidenceCard';
-import { ConsentDialog } from '../../../components/ConsentDialog';
-import { DisclaimerFooter } from '../../../components/DisclaimerFooter';
+import { api } from '@/lib/api';
+import type { Case, EvidenceItem, Finding, AnalysisRun } from '@/lib/types';
+import { Shell } from '@/components/Shell';
+import { EvidenceCard } from '@/components/EvidenceCard';
+import { ConsentDialog } from '@/components/ConsentDialog';
+import { DisclaimerFooter } from '@/components/DisclaimerFooter';
 
-export default function CaseDashboardPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const caseId = resolvedParams.id;
+export default function CaseDashboardPage() {
+  const params = useParams();
+  const caseId = params.id as string;
 
   const [currentCase, setCurrentCase] = useState<Case | null>(null);
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);

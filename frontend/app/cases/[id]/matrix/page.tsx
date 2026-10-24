@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { MatrixResponse } from '@/lib/types';
@@ -8,9 +9,9 @@ import { Shell } from '@/components/Shell';
 import { MatrixTable } from '@/components/MatrixTable';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
 
-export default function MatrixPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const caseId = resolvedParams.id;
+export default function MatrixPage() {
+  const params = useParams();
+  const caseId = params.id as string;
 
   const [matrixData, setMatrixData] = useState<MatrixResponse | null>(null);
   const [loading, setLoading] = useState(true);
