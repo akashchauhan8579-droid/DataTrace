@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "postinstall": "node -e \"const fs=require('fs'),path=require('path');const t=path.resolve(__dirname,'..','node_modules');if(!fs.existsSync(t)){try{fs.symlinkSync(path.resolve(__dirname,'node_modules'),t,'junction');console.log('Symlinked node_modules to root');}catch(e){console.log('Symlink note:',e.message);}}\""
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
