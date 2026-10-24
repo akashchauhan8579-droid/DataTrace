@@ -169,8 +169,6 @@ export const reportsRoutes: RouteDef[] = [
         .from('case_reports')
         .update({
           content: input.content,
-          edited_after_draft: true,
-          author_id: user.id,
           validation_status: 'PENDING',
           updated_at: now,
         })
