@@ -12,8 +12,8 @@ export const CaseOutputSchema = z.object({
   title: z.string(),
   description: z.string().nullable().optional(),
   status: z.enum(['ACTIVE', 'ARCHIVED', 'CLOSED']),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
 });
 
 export const ListCasesOutputSchema = z.object({
@@ -45,8 +45,8 @@ export const casesRoutes: RouteDef[] = [
           title: c.title,
           description: c.description,
           status: c.status,
-          createdAt: c.created_at,
-          updatedAt: c.updated_at,
+          createdAt: new Date(c.created_at).toISOString(),
+          updatedAt: new Date(c.updated_at).toISOString(),
         })),
       };
     },
@@ -96,8 +96,8 @@ export const casesRoutes: RouteDef[] = [
         title: data.title,
         description: data.description,
         status: data.status,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
+        createdAt: new Date(data.created_at).toISOString(),
+        updatedAt: new Date(data.updated_at).toISOString(),
       };
     },
   },
@@ -134,8 +134,8 @@ export const casesRoutes: RouteDef[] = [
         title: data.title,
         description: data.description,
         status: data.status,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
+        createdAt: new Date(data.created_at).toISOString(),
+        updatedAt: new Date(data.updated_at).toISOString(),
       };
     },
   },
