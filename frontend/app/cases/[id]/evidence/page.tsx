@@ -199,17 +199,30 @@ export default function EvidenceUploadPage() {
               </select>
             </div>
 
-            <div className="border-2 border-dashed border-hairline p-8 text-center rounded-sm bg-paper-2/40 hover:bg-paper-2 transition-colors">
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files?.[0]) {
+                  setFile(e.dataTransfer.files[0]);
+                }
+              }}
+              className="border-2 border-dashed border-hairline p-8 text-center rounded-sm bg-paper-2/40 hover:bg-paper-2 transition-colors cursor-pointer"
+            >
               <input
                 type="file"
-                required
-                accept=".eml,.pdf,.txt,message/rfc822,application/pdf"
+                accept=".eml,.pdf,.txt,text/*,*"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 className="block w-full text-xs font-mono text-muted-ink file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-xs file:font-mono file:bg-ink file:text-paper hover:file:bg-neutral-800 cursor-pointer"
               />
               <p className="text-[11px] font-sans text-muted-ink mt-2">
-                Supported formats: RFC-822 Email (.eml), Adobe PDF (.pdf), Plain text (.txt). Max 20MB.
+                Supported formats: RFC-822 Email (.eml), Adobe PDF (.pdf), Plain text (.txt). Drag & drop any file here.
               </p>
+              {file && (
+                <div className="mt-3 p-2 bg-paper border border-amber/60 rounded text-xs font-mono text-ink">
+                  Selected file: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
+                </div>
+              )}
             </div>
 
             <button
