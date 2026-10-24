@@ -136,4 +136,30 @@ describe('Master API Router (Member B - Spec v1.4 §7.5, §16)', () => {
       expect(body.error.code).toBe('VALIDATION');
     });
   });
+
+  describe('P0 Routes Registration (§10, §13, §14)', () => {
+    it('registers analysis runs, matrix, and reports routes with 401 auth gate', async () => {
+      const protectedEndpoints: Array<{ method: string; slug: string[] }> = [
+        { method: 'GET',  slug: ['cases', 'test-case-id', 'runs'] },
+        { method: 'POST', slug: ['cases', 'test-case-id', 'runs'] },
+        { method: 'POST', slug: ['cases', 'test-case-id', 'analyze'] },
+        { method: 'GET',  slug: ['analysis-runs', 'test-run-id'] },
+        { method: 'GET',  slug: ['cases', 'test-case-id', 'request-response-matrix'] },
+        { method: 'GET',  slug: ['cases', 'test-case-id', 'matrix'] },
+        { method: 'PUT',  slug: ['reports', 'test-report-id'] },
+        { method: 'POST', slug: ['reports', 'test-report-id', 'validate'] },
+        { method: 'GET',  slug: ['reports', 'test-report-id', 'export'] },
+      ];
+
+      for (const endpoint of protectedEndpoints) {
+        const req = new Request(`http://localhost:3000/api/${endpoint.slug.join('/')}`, {
+          method: endpoint.method,
+        });
+        const res = await route(req, endpoint.slug);
+        expect(res.status).toBe(401);
+        const body = (await res.json()) as any;
+        expect(body.error.code).toBe('UNAUTHENTICATED');
+      }
+    });
+  });
 });

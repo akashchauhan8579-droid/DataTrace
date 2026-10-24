@@ -110,6 +110,15 @@ export const findingsRoutes: RouteDef[] = [
           human_confirmed_by: user.id,
           human_confirmed_at: now,
         }).eq('id', finding.id);
+
+        // Write verification_results record for audit trail (bug fix: was missing)
+        await admin.from('verification_results').insert({
+          finding_id: finding.id,
+          rule_id: 'contradictionSupport',
+          passed: true,
+          score: 1.0,
+          detail: { mode: 'USER_CONFIRMED', confirmedBy: user.id, confirmedAt: now },
+        });
       } else {
         // Standard reading confirmation
         await admin.from('findings').update({
