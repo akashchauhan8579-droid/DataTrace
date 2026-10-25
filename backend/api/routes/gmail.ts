@@ -66,6 +66,9 @@ async function handleGmailClientError(
     if (updateError) throw new Error(`Failed to expire Gmail connection: ${updateError.message}`);
     return errorResponse('GMAIL_AUTH_EXPIRED', 'Gmail authorization expired; please reconnect', 409);
   }
+  if (error.code === 'AUTH_CODE_INVALID') {
+    return errorResponse('GMAIL_AUTH_FAILED', 'Google authorization could not be completed; please reconnect', 400);
+  }
   return errorResponse('GMAIL_UPSTREAM', 'Gmail service is temporarily unavailable', 502);
 }
 

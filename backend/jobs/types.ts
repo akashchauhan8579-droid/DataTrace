@@ -15,6 +15,7 @@ export type TaskStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
 export interface QueuedTask {
   id: string;
   run_id: string;
+  case_id?: string;
   task_type: TaskType;
   status: TaskStatus;
   input_evidence_scope: unknown;

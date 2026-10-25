@@ -223,23 +223,33 @@ export class AnalysisWorker {
         throw new Error(`Failed to load scoped evidence: ${evidenceError.message}`);
       }
 
+      const eligibleEvidence = evidenceItems ?? [];
+      const { data: allSegments, error: segmentsError } = eligibleEvidence.length > 0
+        ? await this.admin
+          .from('evidence_segments')
+          .select('id, evidence_id, ordinal, locator_type, locator, segment_text')
+          .in('evidence_id', eligibleEvidence.map((evidence: { id: string }) => evidence.id))
+          .order('ordinal', { ascending: true })
+        : { data: [], error: null };
+
+      if (segmentsError) {
+        throw new Error(`Failed to load scoped evidence segments: ${segmentsError.message}`);
+      }
+
+      const segmentsByEvidenceId = new Map<string, typeof allSegments>();
+      for (const segment of allSegments ?? []) {
+        const evidenceSegments = segmentsByEvidenceId.get(segment.evidence_id) ?? [];
+        evidenceSegments.push(segment);
+        segmentsByEvidenceId.set(segment.evidence_id, evidenceSegments);
+      }
+
       const foundSegmentOrdinals = new Map<string, Set<number>>();
-      for (const evidence of evidenceItems ?? []) {
+      for (const evidence of eligibleEvidence) {
         const scope = requestedById.get(evidence.display_id);
         if (!scope) continue;
 
-        const { data: evidenceSegments, error: segmentsError } = await this.admin
-          .from('evidence_segments')
-          .select('id, ordinal, locator_type, locator, segment_text')
-          .eq('evidence_id', evidence.id)
-          .order('ordinal', { ascending: true });
-
-        if (segmentsError) {
-          throw new Error(`Failed to load segments for ${evidence.display_id}: ${segmentsError.message}`);
-        }
-
         const foundOrdinals = new Set<number>();
-        for (const segment of evidenceSegments ?? []) {
+        for (const segment of segmentsByEvidenceId.get(evidence.id) ?? []) {
           if (scope.segmentOrdinals && !scope.segmentOrdinals.includes(segment.ordinal)) continue;
 
           foundOrdinals.add(segment.ordinal);
@@ -275,7 +285,7 @@ export class AnalysisWorker {
       }
     }
 
-    const result = await this.gateway.run(task, scopeMap, segments);
+    const result = await this.gateway.run({ ...task, case_id: run.case_id }, scopeMap, segments);
     const serializedOutput = JSON.stringify(result.validated_output);
     if (serializedOutput === undefined) {
       throw new Error('Gateway returned output that cannot be serialized as JSON');

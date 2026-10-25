@@ -181,13 +181,16 @@ describe('P1-0 One-Shot Gmail Import & Token Vault (Spec §10.6, §15.9, T24–T
               expires_in: 3600,
               scope: 'https://www.googleapis.com/auth/gmail.readonly',
             }), { status: 200 }))
-            .mockResolvedValueOnce(new Response(JSON.stringify({ email: 'synthetic@example.test' }), { status: 200 }));
+            .mockResolvedValueOnce(new Response(JSON.stringify({ emailAddress: 'synthetic@example.test' }), { status: 200 }));
           vi.stubGlobal('fetch', fetchMock);
 
           const result = await new LiveGmailClient().exchangeCode('authorization-code');
           expect(result.scope).toBe('https://www.googleapis.com/auth/gmail.readonly');
           expect(result.email).toBe('synthetic@example.test');
           expect(result.accessToken).toBe('access-token');
+          expect(fetchMock.mock.calls[1][0]).toBe(
+            'https://gmail.googleapis.com/gmail/v1/users/me/profile'
+          );
         });
 
         it('rejects a Google grant with a broader scope', async () => {
@@ -228,6 +231,57 @@ describe('P1-0 One-Shot Gmail Import & Token Vault (Spec §10.6, §15.9, T24–T
 
           await expect(new LiveGmailClient().refreshAccessToken('refresh-token'))
             .rejects.toMatchObject({ code: 'AUTH_EXPIRED', message: 'Gmail authorization expired' });
+        });
+
+        it('does not mark a connection expired when an authorization code is invalid', async () => {
+          vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            error: 'invalid_grant',
+            error_description: 'private provider detail',
+          }), { status: 400 })));
+
+          await expect(new LiveGmailClient().exchangeCode('invalid-code'))
+            .rejects.toMatchObject({ code: 'AUTH_CODE_INVALID' });
+        });
+
+        it('returns actual thread headers, message count, and last-message timestamp', async () => {
+          const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+              threads: [{ id: 'thread_123', snippet: 'Latest message snippet' }],
+              nextPageToken: 'next-page',
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+              messages: [
+                {
+                  internalDate: '1792900000000',
+                  payload: { headers: [{ name: 'Subject', value: 'Actual subject' }] },
+                },
+                {
+                  internalDate: '1792900123000',
+                  payload: { headers: [
+                    { name: 'Subject', value: 'Actual subject' },
+                    { name: 'From', value: 'Sender <sender@example.test>' },
+                  ] },
+                },
+              ],
+            }), { status: 200 }));
+          vi.stubGlobal('fetch', fetchMock);
+
+          const result = await new LiveGmailClient().listThreads('access-token');
+
+          expect(result).toEqual({
+            threads: [{
+              threadId: 'thread_123',
+              subject: 'Actual subject',
+              from: 'Sender <sender@example.test>',
+              snippet: 'Latest message snippet',
+              messageCount: 2,
+              lastMessageAt: new Date(1792900123000).toISOString(),
+            }],
+            nextPageToken: 'next-page',
+          });
+          expect(String(fetchMock.mock.calls[1][0])).toContain('format=metadata');
+          expect(String(fetchMock.mock.calls[1][0])).toContain('metadataHeaders=Subject');
+          expect(String(fetchMock.mock.calls[1][0])).toContain('metadataHeaders=From');
         });
       });
     });

@@ -22,6 +22,11 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
   let auditEvents: any[] = [];
   let tasksStore: any[] = [];
   let runsStore: any[] = [];
+  let consentReadError: { message: string } | null = null;
+  let auditWriteError: { message: string } | null = null;
+  let runsReadError: { message: string } | null = null;
+  let taskUpdateError: { message: string } | null = null;
+  let runUpdateError: { message: string } | null = null;
 
   const mockDb = {
     from: vi.fn().mockImplementation((table: string) => {
@@ -53,7 +58,7 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
                       const active = consentsStore.find(
                         (c) => c.case_id === caseId && c.revoked_at === nullVal
                       );
-                      return { data: active || null, error: null };
+                      return { data: active || null, error: consentReadError };
                     }),
                   }),
                 }),
@@ -113,6 +118,7 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
       if (table === 'audit_events') {
         return {
           insert: vi.fn().mockImplementation(async (event) => {
+            if (auditWriteError) return { error: auditWriteError };
             auditEvents.push(event);
             return { error: null };
           }),
@@ -125,7 +131,7 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
             eq: vi.fn().mockReturnValue({
               in: vi.fn().mockResolvedValue({
                 data: runsStore,
-                error: null,
+                error: runsReadError,
               }),
             }),
           }),
@@ -139,7 +145,7 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
             }),
           })),
           update: vi.fn().mockReturnValue({
-            in: vi.fn().mockResolvedValue({ error: null }),
+            in: vi.fn().mockResolvedValue({ error: runUpdateError }),
           }),
         };
       }
@@ -155,7 +161,7 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
           })),
           update: vi.fn().mockReturnValue({
             in: vi.fn().mockReturnValue({
-              in: vi.fn().mockResolvedValue({ error: null }),
+              in: vi.fn().mockResolvedValue({ error: taskUpdateError }),
             }),
           }),
         };
@@ -170,6 +176,11 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
     auditEvents = [];
     tasksStore = [];
     runsStore = [];
+    consentReadError = null;
+    auditWriteError = null;
+    runsReadError = null;
+    taskUpdateError = null;
+    runUpdateError = null;
   });
 
   it('GET /cases/:id/consent returns consented: false when no consent granted', async () => {
@@ -204,6 +215,40 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
     const body = (await res.json()) as any;
     expect(body.error.code).toBe('CONSENT_REQUIRED');
     expect(body.error.message).toContain('NO_CONSENT');
+  });
+
+  it('does not treat consent lookup failures as missing consent', async () => {
+    consentReadError = { message: 'database unavailable' };
+    const consentRoute = analysisRoutes.find((r) => r.method === 'GET' && r.pattern === '/cases/:id/consent')!;
+    await expect(consentRoute.handler({
+      user: { id: ownerUserId },
+      db: mockDb,
+      admin: mockAdmin,
+      params: { id: testCaseId },
+      req: new Request('http://localhost/api/cases/' + testCaseId + '/consent'),
+    } as any)).rejects.toThrow('Failed to read AI consent');
+
+    consentsStore.push({
+      id: 'consent-1',
+      case_id: testCaseId,
+      user_id: ownerUserId,
+      policy_version: '1.0',
+      provider: 'mock',
+      scope: { mode: 'MINIMIZE' },
+      granted_at: new Date().toISOString(),
+      revoked_at: null,
+    });
+    const runsRoute = analysisRoutes.find((r) => r.method === 'POST' && r.pattern === '/cases/:id/runs')!;
+    await expect(runsRoute.handler({
+      user: { id: ownerUserId },
+      db: mockDb,
+      admin: mockAdmin,
+      params: { id: testCaseId },
+      req: new Request('http://localhost/api/cases/' + testCaseId + '/runs', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    } as any)).rejects.toThrow('Failed to verify AI consent');
   });
 
   it('POST /cases/:id/consent grants consent and records audit event', async () => {
@@ -289,6 +334,50 @@ describe('AI Consent & Gated Analysis API (§15.2 Invariant)', () => {
     expect(consentsStore[0].revoked_at).not.toBeNull();
 
     expect(auditEvents.some((e) => e.action === 'AI_CONSENT_REVOKED')).toBe(true);
+  });
+
+  it('surfaces audit and revocation update failures', async () => {
+    auditWriteError = { message: 'audit unavailable' };
+    const grantRoute = analysisRoutes.find((r) => r.method === 'POST' && r.pattern === '/cases/:id/consent')!;
+    await expect(grantRoute.handler({
+      user: { id: ownerUserId },
+      db: mockDb,
+      admin: mockAdmin,
+      params: { id: testCaseId },
+      req: new Request('http://localhost/api/cases/' + testCaseId + '/consent', { method: 'POST' }),
+    } as any)).rejects.toThrow('Failed to record AI consent grant audit event');
+
+    auditWriteError = null;
+    runsStore.push({ id: 'run-1', status: 'RUNNING' });
+    const revokeRoute = analysisRoutes.find((r) => r.method === 'DELETE' && r.pattern === '/cases/:id/consent')!;
+    taskUpdateError = { message: 'task update unavailable' };
+    await expect(revokeRoute.handler({
+      user: { id: ownerUserId },
+      db: mockDb,
+      admin: mockAdmin,
+      params: { id: testCaseId },
+      req: new Request('http://localhost/api/cases/' + testCaseId + '/consent', { method: 'DELETE' }),
+    } as any)).rejects.toThrow('Failed to stop analysis tasks');
+
+    taskUpdateError = null;
+    runUpdateError = { message: 'run update unavailable' };
+    await expect(revokeRoute.handler({
+      user: { id: ownerUserId },
+      db: mockDb,
+      admin: mockAdmin,
+      params: { id: testCaseId },
+      req: new Request('http://localhost/api/cases/' + testCaseId + '/consent', { method: 'DELETE' }),
+    } as any)).rejects.toThrow('Failed to stop analysis runs');
+
+    runUpdateError = null;
+    runsReadError = { message: 'runs unavailable' };
+    await expect(revokeRoute.handler({
+      user: { id: ownerUserId },
+      db: mockDb,
+      admin: mockAdmin,
+      params: { id: testCaseId },
+      req: new Request('http://localhost/api/cases/' + testCaseId + '/consent', { method: 'DELETE' }),
+    } as any)).rejects.toThrow('Failed to find active analysis runs');
   });
 
   it('assertCaseOwner blocks non-owners with 404 NOT_FOUND on consent endpoints', async () => {

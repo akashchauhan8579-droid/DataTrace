@@ -64,8 +64,14 @@ export function verifySignedState(state: string, expectedUserId: string): boolea
 }
 
 export class GmailClientError extends Error {
-  constructor(public readonly code: 'AUTH_EXPIRED' | 'UPSTREAM') {
-    super(code === 'AUTH_EXPIRED' ? 'Gmail authorization expired' : 'Gmail service request failed');
+  constructor(public readonly code: 'AUTH_EXPIRED' | 'AUTH_CODE_INVALID' | 'UPSTREAM') {
+    super(
+      code === 'AUTH_EXPIRED'
+        ? 'Gmail authorization expired'
+        : code === 'AUTH_CODE_INVALID'
+          ? 'Gmail authorization code is invalid or expired'
+          : 'Gmail service request failed'
+    );
     this.name = 'GmailClientError';
   }
 }
@@ -206,7 +212,7 @@ export class LiveGmailClient implements GmailClient {
       body: params.toString(),
     });
 
-    const data = await this.readTokenResponse(res);
+    const data = await this.readTokenResponse(res, 'AUTH_CODE_INVALID');
     const accessToken = this.requireString(data.access_token);
     const refreshToken = this.requireString(data.refresh_token);
     const scope = this.requireString(data.scope);
@@ -214,18 +220,18 @@ export class LiveGmailClient implements GmailClient {
       throw new GmailClientError('UPSTREAM');
     }
 
-    // Fetch user email using userinfo endpoint
-    const userRes = await fetchGoogle('https://www.googleapis.com/oauth2/v2/userinfo', {
+    // Resolve the connected mailbox using the granted Gmail read-only scope.
+    const userRes = await fetchGoogle('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!userRes.ok) throw new GmailClientError('UPSTREAM');
-    const userData = await readGoogleJson<{ email?: unknown }>(userRes);
-    if (typeof userData.email !== 'string') throw new GmailClientError('UPSTREAM');
+    const userData = await readGoogleJson<{ emailAddress?: unknown }>(userRes);
+    if (typeof userData.emailAddress !== 'string') throw new GmailClientError('UPSTREAM');
 
     return {
       accessToken,
       refreshToken,
-      email: userData.email,
+      email: userData.emailAddress,
       expiresIn: typeof data.expires_in === 'number' ? data.expires_in : 3600,
       scope,
     };
@@ -247,7 +253,10 @@ export class LiveGmailClient implements GmailClient {
     return this.requireString(data.access_token);
   }
 
-  private async readTokenResponse(res: Response): Promise<Record<string, unknown>> {
+  private async readTokenResponse(
+    res: Response,
+    invalidGrantCode: 'AUTH_EXPIRED' | 'AUTH_CODE_INVALID' = 'AUTH_EXPIRED'
+  ): Promise<Record<string, unknown>> {
     let data: Record<string, unknown>;
     try {
       data = await res.json() as Record<string, unknown>;
@@ -255,7 +264,7 @@ export class LiveGmailClient implements GmailClient {
       throw new GmailClientError('UPSTREAM');
     }
     if (!res.ok) {
-      if (data.error === 'invalid_grant') throw new GmailClientError('AUTH_EXPIRED');
+      if (data.error === 'invalid_grant') throw new GmailClientError(invalidGrantCode);
       throw new GmailClientError('UPSTREAM');
     }
     return data;
@@ -282,17 +291,84 @@ export class LiveGmailClient implements GmailClient {
       throw new GmailClientError(res.status === 401 ? 'AUTH_EXPIRED' : 'UPSTREAM');
     }
 
-    const data = await readGoogleJson<any>(res);
-    const rawThreads = data.threads || [];
+    const data = await readGoogleJson<{
+      threads?: Array<{ id?: unknown; snippet?: unknown }>;
+      nextPageToken?: unknown;
+    }>(res);
+    if (
+      (data.threads !== undefined && !Array.isArray(data.threads)) ||
+      (data.threads?.length ?? 0) > 10
+    ) {
+      throw new GmailClientError('UPSTREAM');
+    }
 
-    const summaries = rawThreads.map((t: any) => ({
-      threadId: t.id,
-      subject: t.snippet?.slice(0, 80) || '(No Subject)',
-      from: 'Sender',
-      snippet: t.snippet?.slice(0, 300) || '',
-      messageCount: 1,
-      lastMessageAt: new Date().toISOString(),
+    const summaries = await Promise.all((data.threads ?? []).map(async (thread) => {
+      if (typeof thread.id !== 'string' || !GmailIdSchema.safeParse(thread.id).success) {
+        throw new GmailClientError('UPSTREAM');
+      }
+
+      const threadUrl = new URL(
+        `https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(thread.id)}`
+      );
+      threadUrl.searchParams.set('format', 'metadata');
+      threadUrl.searchParams.append('metadataHeaders', 'Subject');
+      threadUrl.searchParams.append('metadataHeaders', 'From');
+      const threadRes = await fetchGoogle(threadUrl.toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!threadRes.ok) {
+        throw new GmailClientError(threadRes.status === 401 ? 'AUTH_EXPIRED' : 'UPSTREAM');
+      }
+      const threadData = await readGoogleJson<{
+        messages?: Array<{
+          internalDate?: unknown;
+          payload?: { headers?: Array<{ name?: unknown; value?: unknown }> };
+        }>;
+      }>(threadRes);
+      const messages = threadData.messages;
+      if (!Array.isArray(messages) || messages.length === 0) {
+        throw new GmailClientError('UPSTREAM');
+      }
+
+      const lastMessage = messages[messages.length - 1];
+      if (!lastMessage || typeof lastMessage !== 'object') {
+        throw new GmailClientError('UPSTREAM');
+      }
+      const headers = lastMessage?.payload?.headers;
+      if (!Array.isArray(headers)) {
+        throw new GmailClientError('UPSTREAM');
+      }
+      const headerValue = (name: string) => {
+        const header = headers.find(
+          item => item && typeof item.name === 'string' &&
+            item.name.toLowerCase() === name.toLowerCase()
+        );
+        return typeof header?.value === 'string' ? header.value : undefined;
+      };
+      const timestamp = typeof lastMessage.internalDate === 'string'
+        ? Number(lastMessage.internalDate)
+        : NaN;
+      const lastMessageDate = new Date(timestamp);
+      if (!Number.isFinite(timestamp) || timestamp <= 0 || !Number.isFinite(lastMessageDate.getTime())) {
+        throw new GmailClientError('UPSTREAM');
+      }
+
+      return {
+        threadId: thread.id,
+        subject: headerValue('Subject')?.slice(0, 300) || '(No Subject)',
+        from: headerValue('From')?.slice(0, 300) || '(Unknown sender)',
+        snippet: typeof thread.snippet === 'string' ? thread.snippet.slice(0, 300) : '',
+        messageCount: messages.length,
+        lastMessageAt: lastMessageDate.toISOString(),
+      };
     }));
+
+    if (
+      data.nextPageToken !== undefined &&
+      (typeof data.nextPageToken !== 'string' || data.nextPageToken.length > 512)
+    ) {
+      throw new GmailClientError('UPSTREAM');
+    }
 
     return {
       threads: summaries,

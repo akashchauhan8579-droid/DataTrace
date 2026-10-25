@@ -103,7 +103,10 @@ export class RealGatewayAdapter implements AIGatewayInterface {
 
     // 0. Defense-in-depth consent check if configured
     if (this.checkConsentFn) {
-      const consentCheck = await this.checkConsentFn(task.run_id);
+      if (!task.case_id) {
+        throw new Error('AI consent verification requires the task case id');
+      }
+      const consentCheck = await this.checkConsentFn(task.case_id);
       if (!consentCheck.ok) {
         throw new Error(`AI consent verification failed: ${consentCheck.reason || 'NO_CONSENT'}`);
       }

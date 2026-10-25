@@ -187,6 +187,28 @@ it('validates signed state before exchanging the OAuth code', async () => {
   expect(getClient).not.toHaveBeenCalled();
 });
 
+it('treats an invalid OAuth code as a failed connection attempt, not an expired connection', async () => {
+  const context = makeContext();
+  context.context.req = new Request('http://localhost/api/gmail/callback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: 'invalid-code',
+      state: gmailIntegration.createSignedState(USER_ID),
+    }),
+  });
+  const client = new gmailIntegration.MockGmailClient();
+  vi.spyOn(client, 'exchangeCode').mockRejectedValue(new GmailClientError('AUTH_CODE_INVALID'));
+  vi.spyOn(gmailIntegration, 'getGmailClient').mockReturnValue(client);
+  const callbackRoute = gmailRoutes.find(route => route.pattern === '/gmail/callback');
+  if (!callbackRoute) throw new Error('Gmail callback route is not registered');
+
+  const response = await callbackRoute.handler(context.context as never) as Response;
+  expect(response.status).toBe(400);
+  expect(((await response.json()) as { error: { code: string } }).error.code)
+    .toBe('GMAIL_AUTH_FAILED');
+});
+
 describe('Gmail import route', () => {
   it('rejects unknown import options so clients cannot override the server cap', () => {
     expect(GmailImportRequestSchema.safeParse({

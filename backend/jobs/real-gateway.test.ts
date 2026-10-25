@@ -12,6 +12,7 @@ import { scopeKey } from '../../ai/gateway/scope';
 const BASE_TASK: QueuedTask = {
   id: 'task-rga-001',
   run_id: 'run-rga-001',
+  case_id: 'case-rga-001',
   task_type: 'extraction',
   status: 'RUNNING',
   input_evidence_scope: 'EV-200',
@@ -435,14 +436,19 @@ describe('RealGatewayAdapter — STEP 14 (Member B Spec v1.4 §7.6)', () => {
       }),
     };
 
+    const checkConsent = vi.fn(async (caseId: string) => {
+      expect(caseId).toBe('case-rga-001');
+      return { ok: false, reason: 'REVOKED' };
+    });
     const adapter = new RealGatewayAdapter({
       provider,
-      checkConsent: async () => ({ ok: false, reason: 'REVOKED' }),
+      checkConsent,
     });
 
     await expect(adapter.run(BASE_TASK, SCOPE_MAP, SEGMENTS)).rejects.toThrow(
       'AI consent verification failed: REVOKED'
     );
+    expect(checkConsent).toHaveBeenCalledWith('case-rga-001');
     expect(provider.analyze).not.toHaveBeenCalled();
   });
 });

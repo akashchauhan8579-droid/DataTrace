@@ -29,7 +29,7 @@ export const analysisRoutes: RouteDef[] = [
       const check = await assertCaseOwner(db, params.id, user.id);
       if (!check.ok) return check.response;
 
-      const { data: consent } = await db
+      const { data: consent, error } = await db
         .from('ai_consents')
         .select('id, policy_version, provider, scope, granted_at, revoked_at')
         .eq('case_id', params.id)
@@ -38,6 +38,9 @@ export const analysisRoutes: RouteDef[] = [
         .limit(1)
         .maybeSingle();
 
+      if (error) {
+        throw new Error(`Failed to read AI consent for case ${params.id}: ${error.message}`);
+      }
       if (!consent) {
         return { consented: false };
       }
@@ -86,7 +89,7 @@ export const analysisRoutes: RouteDef[] = [
         throw new Error(`Failed to record AI consent: ${insertError?.message}`);
       }
 
-      await admin.from('audit_events').insert({
+      const { error: auditError } = await admin.from('audit_events').insert({
         case_id: params.id,
         actor_type: 'USER',
         actor_id: user.id,
@@ -99,6 +102,9 @@ export const analysisRoutes: RouteDef[] = [
           scope: { mode: 'MINIMIZE' },
         },
       });
+      if (auditError) {
+        throw new Error(`Failed to record AI consent grant audit event: ${auditError.message}`);
+      }
 
       return {
         success: true,
@@ -131,15 +137,18 @@ export const analysisRoutes: RouteDef[] = [
       }
 
       // Spec §15.2: Revocation terminates running and queued tasks for the case immediately
-      const { data: runs } = await admin
+      const { data: runs, error: runsError } = await admin
         .from('analysis_runs')
         .select('id')
         .eq('case_id', params.id)
         .in('status', ['PENDING', 'RUNNING']);
 
+      if (runsError) {
+        throw new Error(`Failed to find active analysis runs for case ${params.id}: ${runsError.message}`);
+      }
       if (runs && runs.length > 0) {
-        const runIds = runs.map((r: any) => r.id);
-        await admin
+        const runIds = runs.map((run: { id: string }) => run.id);
+        const { error: tasksError } = await admin
           .from('analysis_tasks')
           .update({
             status: 'FAILED',
@@ -147,17 +156,23 @@ export const analysisRoutes: RouteDef[] = [
           })
           .in('run_id', runIds)
           .in('status', ['QUEUED', 'RUNNING']);
+        if (tasksError) {
+          throw new Error(`Failed to stop analysis tasks after consent revocation: ${tasksError.message}`);
+        }
 
-        await admin
+        const { error: runUpdateError } = await admin
           .from('analysis_runs')
           .update({
             status: 'FAILED',
             completed_at: revokedAt,
           })
           .in('id', runIds);
+        if (runUpdateError) {
+          throw new Error(`Failed to stop analysis runs after consent revocation: ${runUpdateError.message}`);
+        }
       }
 
-      await admin.from('audit_events').insert({
+      const { error: auditError } = await admin.from('audit_events').insert({
         case_id: params.id,
         actor_type: 'USER',
         actor_id: user.id,
@@ -168,6 +183,9 @@ export const analysisRoutes: RouteDef[] = [
           revokedAt,
         },
       });
+      if (auditError) {
+        throw new Error(`Failed to record AI consent revocation audit event: ${auditError.message}`);
+      }
 
       return {
         success: true,
@@ -278,7 +296,7 @@ export const analysisRoutes: RouteDef[] = [
       if (!check.ok) return check.response;
 
       // 2. Invariant §15.2: Verify active AI consent exists for this case before queuing any tasks
-      const { data: consentRow } = await db
+      const { data: consentRow, error: consentError } = await db
         .from('ai_consents')
         .select('policy_version, revoked_at')
         .eq('case_id', params.id)
@@ -287,6 +305,9 @@ export const analysisRoutes: RouteDef[] = [
         .limit(1)
         .maybeSingle();
 
+      if (consentError) {
+        throw new Error(`Failed to verify AI consent for case ${params.id}: ${consentError.message}`);
+      }
       const consentResult = checkConsent(
         consentRow ? { policyVersion: consentRow.policy_version, revokedAt: consentRow.revoked_at } : null,
         '1.0'
@@ -399,7 +420,7 @@ export const analysisRoutes: RouteDef[] = [
       }
 
       // 6. Emit audit event
-      await admin.from('audit_events').insert({
+      const { error: auditError } = await admin.from('audit_events').insert({
         case_id: params.id,
         actor_type: 'USER',
         actor_id: user.id,
@@ -413,6 +434,9 @@ export const analysisRoutes: RouteDef[] = [
           evidenceCount: evidenceScope.length,
         },
       });
+      if (auditError) {
+        throw new Error(`Failed to record analysis run audit event: ${auditError.message}`);
+      }
 
       return {
         runId: run.id,
