@@ -53,15 +53,25 @@ export async function route(
   let matchedRoute: RouteDef | null = null;
   let params: Record<string, string> = {};
 
-  for (const r of customRoutes) {
-    if (r.method === method) {
-      const match = matchRoute(r.pattern, pathname);
-      if (match.matches) {
-        matchedRoute = r;
-        params = match.params;
-        break;
+  try {
+    for (const r of customRoutes) {
+      if (r.method === method) {
+        const match = matchRoute(r.pattern, pathname);
+        if (match.matches) {
+          matchedRoute = r;
+          params = match.params;
+          break;
+        }
       }
     }
+  } catch (error) {
+    if (error instanceof URIError) {
+      return new Response(
+        JSON.stringify({ error: { code: 'VALIDATION', message: 'Malformed URL path parameter encoding' } }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    throw error;
   }
 
   if (!matchedRoute) {
@@ -182,16 +192,16 @@ export async function route(
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
-  } catch (err: any) {
-    // Standard error envelope for uncaught exceptions
+  } catch (err: unknown) {
+    console.error('[API] Unhandled route error:', err);
     const errorBody: StandardErrorEnvelope = {
       error: {
-        code: err.code || 'INTERNAL',
-        message: err.message || 'An unexpected internal error occurred',
+        code: 'INTERNAL',
+        message: 'An unexpected internal error occurred',
       },
     };
     return new Response(JSON.stringify(errorBody), {
-      status: err.status || 500,
+      status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }

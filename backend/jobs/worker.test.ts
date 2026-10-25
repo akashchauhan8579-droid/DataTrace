@@ -42,6 +42,109 @@ const MOCK_SEGMENTS = [
 ];
 
 describe('Analysis Worker — Phase 3 (Member B Spec v1.4 §7.6)', () => {
+  describe('Finding persistence', () => {
+    const candidate = {
+      findingType: 'CLAIM',
+      statement: 'The organization confirms deletion.',
+      evidenceBasis: 'INFERRED',
+      structuredPayload: {
+        normalizedClaim: {
+          subject: 'organization',
+          predicate: 'deletes_data',
+          object: 'personal data',
+          polarity: 'AFFIRMS',
+        },
+      },
+      citations: [{
+        evidenceDisplayId: 'EV-101',
+        segmentOrdinal: 1,
+        locatorType: 'CHAR_RANGE',
+        locator: { start: 0, end: 10 },
+        quotedText: 'deleted',
+      }],
+    };
+
+    it('persists only in-scope citations using stored locators and pending validation', async () => {
+      const findingInsert = vi.fn().mockReturnValue({
+        select: () => ({
+          single: async () => ({ data: { id: 'finding-001' }, error: null }),
+        }),
+      });
+      const citationInsert = vi.fn().mockResolvedValue({ error: null });
+      const admin = {
+        from: (table: string) => table === 'findings'
+          ? {
+              insert: findingInsert,
+              delete: () => ({ in: vi.fn().mockResolvedValue({ error: null }) }),
+            }
+          : { insert: citationInsert },
+      };
+      const worker = new AnalysisWorker();
+      (worker as any).admin = admin;
+      const storedLocator = { start: 1, end: 9 };
+      const scopeMap = new Map([
+        [scopeKey('EV-101', 1), {
+          evidenceId: 'evidence-001',
+          segmentId: 'segment-001',
+          locatorType: 'CHAR_RANGE',
+          locator: storedLocator,
+        }],
+      ]);
+
+      const inserted = await (worker as any).persistFindings(
+        'case-001',
+        'task-001',
+        { candidates: [candidate] },
+        scopeMap
+      );
+
+      expect(inserted).toEqual(['finding-001']);
+      expect(findingInsert).toHaveBeenCalledWith(expect.objectContaining({
+        verification_state: 'UNVERIFIED',
+      }));
+      expect(citationInsert).toHaveBeenCalledWith([expect.objectContaining({
+        evidence_id: 'evidence-001',
+        segment_id: 'segment-001',
+        locator: storedLocator,
+        validation_status: 'PENDING',
+      })]);
+    });
+
+    it('propagates citation persistence failures and removes the incomplete finding', async () => {
+      const deleteFindings = vi.fn().mockResolvedValue({ error: null });
+      const admin = {
+        from: (table: string) => table === 'findings'
+          ? {
+              insert: () => ({
+                select: () => ({
+                  single: async () => ({ data: { id: 'finding-001' }, error: null }),
+                }),
+              }),
+              delete: () => ({ in: deleteFindings }),
+            }
+          : { insert: vi.fn().mockResolvedValue({ error: { message: 'citation write failed' } }) },
+      };
+      const worker = new AnalysisWorker();
+      (worker as any).admin = admin;
+      const scopeMap = new Map([
+        [scopeKey('EV-101', 1), {
+          evidenceId: 'evidence-001',
+          segmentId: 'segment-001',
+          locatorType: 'CHAR_RANGE',
+          locator: { start: 0, end: 10 },
+        }],
+      ]);
+
+      await expect((worker as any).persistFindings(
+        'case-001',
+        'task-001',
+        { candidates: [candidate] },
+        scopeMap
+      )).rejects.toThrow('Failed to persist citations');
+      expect(deleteFindings).toHaveBeenCalledWith('id', ['finding-001']);
+    });
+  });
+
   describe('MockGateway (Stub)', () => {
     const gateway = new MockGateway();
 

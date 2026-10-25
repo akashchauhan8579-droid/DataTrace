@@ -7,6 +7,7 @@ import type { AIGatewayInterface, QueuedTask } from './types';
 import { MockGateway } from './mock-gateway';
 import { RealGatewayAdapter } from './real-gateway';
 import { checkConsent } from '../../ai/gateway/consent';
+import { parseCandidate } from '../../contracts/schemas/findings';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:54321';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-service-role-key';
@@ -296,34 +297,50 @@ export class AnalysisWorker {
       throw new Error(`Output hash mismatch! Expected=${result.output_sha256} Got=${computedHash}`);
     }
 
-    const { data: completed, error: completionError } = await this.admin.rpc(
-      'complete_analysis_task',
-      {
-        p_task_id: task.id,
-        p_claim_token: task.claim_token,
-        p_validated_output: result.validated_output,
-        p_output_sha256: result.output_sha256,
-        p_tokens_in: result.tokens_in ?? 0,
-        p_tokens_out: result.tokens_out ?? 0,
-        p_latency_ms: result.latency_ms ?? 0,
-        p_fallback_used: result.fallback_used,
-        p_scope_map_size: scopeMap.size,
+    let insertedFindingIds: string[] = [];
+    try {
+      // Persist candidate rows before marking the task complete. If either step fails,
+      // remove only rows inserted by this attempt so the task can be retried safely.
+      if (
+        task.task_type === 'extraction' ||
+        task.task_type === 'response_analysis' ||
+        task.task_type === 'friction_analysis'
+      ) {
+        insertedFindingIds = await this.persistFindings(
+          run.case_id,
+          task.id,
+          result.validated_output,
+          scopeMap
+        );
       }
-    );
 
-    if (completionError) {
-      throw new Error(`Failed to persist task and audit event: ${completionError.message}`);
-    }
-    if (completed !== true) {
-      throw new Error(`Task ${task.id} is no longer owned by this worker`);
+      const { data: completed, error: completionError } = await this.admin.rpc(
+        'complete_analysis_task',
+        {
+          p_task_id: task.id,
+          p_claim_token: task.claim_token,
+          p_validated_output: result.validated_output,
+          p_output_sha256: result.output_sha256,
+          p_tokens_in: result.tokens_in ?? 0,
+          p_tokens_out: result.tokens_out ?? 0,
+          p_latency_ms: result.latency_ms ?? 0,
+          p_fallback_used: result.fallback_used,
+          p_scope_map_size: scopeMap.size,
+        }
+      );
+
+      if (completionError) {
+        throw new Error(`Failed to persist task and audit event: ${completionError.message}`);
+      }
+      if (completed !== true) {
+        throw new Error(`Task ${task.id} is no longer owned by this worker`);
+      }
+    } catch (error) {
+      await this.removeFindings(insertedFindingIds);
+      throw error;
     }
 
     console.log(`[Worker] Task ${task.id} COMPLETED (latency=${result.latency_ms ?? 0}ms)`);
-
-    // Persist candidate findings and citations into DB for display in UI
-    if (task.task_type === 'extraction' || task.task_type === 'response_analysis' || task.task_type === 'friction_analysis') {
-      await this.persistFindings(run.case_id, task.id, result.validated_output, scopeMap);
-    }
   }
 
   private async persistFindings(
@@ -331,90 +348,89 @@ export class AnalysisWorker {
     taskId: string,
     validatedOutput: unknown,
     scopeMap: ScopeMap
-  ): Promise<void> {
+  ): Promise<string[]> {
+    if (typeof validatedOutput !== 'object' || validatedOutput === null || Array.isArray(validatedOutput)) {
+      throw new Error(`Task ${taskId} returned an invalid findings output`);
+    }
     const output = validatedOutput as Record<string, unknown>;
-    const candidates: unknown[] = Array.isArray(output?.candidates) ? output.candidates : [];
+    const candidates: unknown[] = Array.isArray(output.candidates)
+      ? output.candidates
+      : Array.isArray(output.frictionSignals)
+        ? output.frictionSignals
+        : [];
     if (candidates.length === 0) {
       console.log('[Worker] No candidates to persist for task ' + taskId);
-      return;
+      return [];
     }
-    const { data: evidenceItems } = await this.admin
-      .from('evidence_items')
-      .select('id, display_id')
-      .eq('case_id', caseId);
-    const evidenceByDisplayId = new Map<string, string>(
-      (evidenceItems || []).map((e: { id: string; display_id: string }) => [e.display_id, e.id])
-    );
-    let persisted = 0;
-    for (const candidate of candidates) {
-      const c = candidate as Record<string, unknown>;
-      if (!c.findingType) continue;
-
-      let statement = c.statement ? String(c.statement) : '';
-      if (!statement) {
-        const payload = (c.structuredPayload as Record<string, any>) || {};
-        if (c.findingType === 'CLAIM' && payload.normalizedClaim) {
-          const nc = payload.normalizedClaim;
-          statement = `${nc.subject} ${nc.polarity === 'DENIES' ? 'denies ' : 'affirms '}${nc.predicate} ${nc.object}`;
-        } else if (c.findingType === 'ENTITY' && payload.name) {
-          statement = `Entity: ${payload.name} (${payload.entityType || 'ENTITY'})`;
-        } else if (c.findingType === 'REQUEST' && payload.item) {
-          statement = `Request: ${payload.item}`;
-        } else if (c.findingType === 'RESPONSE') {
-          statement = `Response (${payload.coverage || 'RESPONSE'})`;
-        } else if (c.findingType === 'CONTRADICTION') {
-          statement = `Contradiction between ${payload.claimARef} and ${payload.claimBRef}`;
-        } else {
-          statement = `${c.findingType} finding`;
+    const insertedIds: string[] = [];
+    try {
+      for (const rawCandidate of candidates) {
+        const parsed = parseCandidate(rawCandidate);
+        if (!parsed.ok) {
+          console.warn(`[Worker] Rejected malformed candidate in task ${taskId}: ${parsed.reason}`);
+          continue;
         }
-      }
-      const basisMap: Record<string, string> = { DIRECT: 'DIRECT', INFERRED: 'INFERRED', CONFLICTING: 'CONFLICTING' };
-      const evidenceBasis = basisMap[c.evidenceBasis as string] ?? 'INFERRED';
-      try {
-        const { data: finding, error: fErr } = await this.admin
+        const candidate = parsed.value;
+        const citations = candidate.citations.flatMap((citation) => {
+          const scopeEntry = scopeMap.get(
+            scopeKey(citation.evidenceDisplayId, citation.segmentOrdinal)
+          );
+          if (!scopeEntry) return [];
+          return [{
+            case_id: caseId,
+            evidence_id: scopeEntry.evidenceId,
+            segment_id: scopeEntry.segmentId,
+            locator_type: scopeEntry.locatorType,
+            locator: scopeEntry.locator,
+            quoted_text: citation.quotedText ?? null,
+            validation_status: 'PENDING',
+          }];
+        });
+        if (citations.length === 0) {
+          console.warn(`[Worker] Rejected candidate without an in-scope citation in task ${taskId}`);
+          continue;
+        }
+
+        const { data: finding, error: findingError } = await this.admin
           .from('findings')
           .insert({
             case_id: caseId,
-            finding_type: c.findingType,
-            statement: statement.slice(0, 1000),
-            structured_payload: (c.structuredPayload as object) ?? {},
-            evidence_basis: evidenceBasis,
-            verification_state: 'AI_INFERRED',
-            candidate_confidence: typeof c.candidateConfidence === 'number' ? c.candidateConfidence : null,
+            finding_type: candidate.findingType,
+            statement: candidate.statement,
+            structured_payload: candidate.structuredPayload,
+            evidence_basis: candidate.evidenceBasis,
+            verification_state: 'UNVERIFIED',
+            candidate_confidence: candidate.candidateConfidence ?? null,
             source_task_id: taskId,
           })
-          .select('id, case_id')
+          .select('id')
           .single();
-        if (fErr || !finding) {
-          console.warn('[Worker] Could not insert finding: ' + fErr?.message);
-          continue;
+        if (findingError || !finding) {
+          throw new Error(`Failed to persist finding for task ${taskId}: ${findingError?.message ?? 'No row returned'}`);
         }
-        const rawCitations = Array.isArray(c.citations) ? c.citations : [];
-        for (const cit of rawCitations) {
-          const ci = cit as Record<string, unknown>;
-          const displayId = (ci.evidenceDisplayId || ci.displayId) as string;
-          const ordinal = (ci.segmentOrdinal ?? ci.ordinal) as number;
-          const evidenceId = evidenceByDisplayId.get(displayId);
-          if (!evidenceId) continue;
-          const scopeEntry = scopeMap.get(displayId + '#' + ordinal);
-          const { error: citErr } = await this.admin.from('citations').insert({
-            case_id: caseId,
-            finding_id: finding.id,
-            evidence_id: evidenceId,
-            segment_id: scopeEntry?.segmentId ?? null,
-            locator_type: (ci.locatorType as string) ?? scopeEntry?.locatorType ?? 'CHAR_RANGE',
-            locator: (ci.locator as object) ?? scopeEntry?.locator ?? {},
-            quoted_text: ci.quotedText ? String(ci.quotedText).slice(0, 2000) : null,
-            validation_status: 'VALID',
-          });
-          if (citErr) console.warn('[Worker] Citation insert failed: ' + citErr.message);
+        insertedIds.push(finding.id);
+
+        const { error: citationError } = await this.admin
+          .from('citations')
+          .insert(citations.map((citation) => ({ ...citation, finding_id: finding.id })));
+        if (citationError) {
+          throw new Error(`Failed to persist citations for task ${taskId}: ${citationError.message}`);
         }
-        persisted++;
-      } catch (e) {
-        console.warn('[Worker] Skipping candidate due to error: ' + (e instanceof Error ? e.message : String(e)));
       }
+    } catch (error) {
+      await this.removeFindings(insertedIds);
+      throw error;
     }
-    console.log('[Worker] Persisted ' + persisted + '/' + candidates.length + ' findings for task ' + taskId);
+    console.log(`[Worker] Persisted ${insertedIds.length}/${candidates.length} findings for task ${taskId}`);
+    return insertedIds;
+  }
+
+  private async removeFindings(findingIds: string[]): Promise<void> {
+    if (findingIds.length === 0) return;
+    const { error } = await this.admin.from('findings').delete().in('id', findingIds);
+    if (error) {
+      throw new Error(`Failed to clean up incomplete findings: ${error.message}`);
+    }
   }
 
   private async failTask(task: QueuedTask, reason: string): Promise<void> {

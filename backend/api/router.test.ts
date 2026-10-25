@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { route } from './router';
 import type { RouteDef } from './types';
 import { z } from 'zod';
@@ -56,6 +56,26 @@ describe('Master API Router (Member B - Spec v1.4 §7.5, §16)', () => {
       expect(body.caseId).toBe('c-123');
       expect(body.itemId).toBe('i-456');
     });
+
+    it('returns a validation response for malformed percent-encoding in a path parameter', async () => {
+      const customRoute: RouteDef = {
+        method: 'GET',
+        pattern: '/cases/:caseId',
+        auth: 'none',
+        handler: async () => ({ ok: true }),
+      };
+      const req = new Request('http://localhost:3000/api/cases/%E0%A4%A');
+
+      const res = await route(req, ['cases', '%E0%A4%A'], [customRoute]);
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: {
+          code: 'VALIDATION',
+          message: 'Malformed URL path parameter encoding',
+        },
+      });
+    });
   });
 
   describe('Authentication Gate (§7.5, §15.1)', () => {
@@ -87,6 +107,31 @@ describe('Master API Router (Member B - Spec v1.4 §7.5, §16)', () => {
   });
 
   describe('Input Validation & Error Envelope (§7.5)', () => {
+    it('does not expose unexpected exception details to clients', async () => {
+      const customRoute: RouteDef = {
+        method: 'GET',
+        pattern: '/internal-error',
+        auth: 'none',
+        handler: async () => {
+          throw new Error('database password and private query details');
+        },
+      };
+      const logError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const req = new Request('http://localhost:3000/api/internal-error');
+
+      const res = await route(req, ['internal-error'], [customRoute]);
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({
+        error: {
+          code: 'INTERNAL',
+          message: 'An unexpected internal error occurred',
+        },
+      });
+      expect(logError).toHaveBeenCalled();
+      logError.mockRestore();
+    });
+
     it('returns 400 VALIDATION with details when payload fails Zod schema', async () => {
       const customRoute: RouteDef = {
         method: 'POST',
