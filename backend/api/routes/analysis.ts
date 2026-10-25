@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { RouteDef } from '../types';
+import { checkConsent } from '../../../ai/gateway/consent';
+import { assertCaseOwner } from '../../../database/security/assertCaseOwner';
 
 export const StartAnalysisInputSchema = z.object({
   taskTypes: z
@@ -18,26 +20,171 @@ export const StartAnalysisInputSchema = z.object({
 }).strict();
 
 export const analysisRoutes: RouteDef[] = [
-  // List analysis runs for a case
+  // 1. GET /cases/:id/consent — Check active AI consent for a case (§15.2)
+  {
+    method: 'GET',
+    pattern: '/cases/:id/consent',
+    auth: 'user',
+    handler: async ({ user, db, params }) => {
+      const check = await assertCaseOwner(db, params.id, user.id);
+      if (!check.ok) return check.response;
+
+      const { data: consent } = await db
+        .from('ai_consents')
+        .select('id, policy_version, provider, scope, granted_at, revoked_at')
+        .eq('case_id', params.id)
+        .is('revoked_at', null)
+        .order('granted_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!consent) {
+        return { consented: false };
+      }
+
+      const validCheck = checkConsent(
+        { policyVersion: consent.policy_version, revokedAt: consent.revoked_at },
+        '1.0'
+      );
+
+      return {
+        consented: validCheck.ok,
+        policyVersion: consent.policy_version,
+        provider: consent.provider,
+        grantedAt: consent.granted_at,
+        scope: consent.scope,
+      };
+    },
+  },
+
+  // 2. POST /cases/:id/consent — Authorize AI model analysis for a case (§15.2)
+  {
+    method: 'POST',
+    pattern: '/cases/:id/consent',
+    auth: 'user',
+    handler: async ({ user, db, admin, params }) => {
+      const check = await assertCaseOwner(db, params.id, user.id);
+      if (!check.ok) return check.response;
+
+      const provider = process.env.AI_PROVIDER || 'mock';
+
+      const { data: consent, error: insertError } = await admin
+        .from('ai_consents')
+        .insert({
+          case_id: params.id,
+          user_id: user.id,
+          policy_version: '1.0',
+          provider,
+          scope: { mode: 'MINIMIZE' },
+          granted_at: new Date().toISOString(),
+          revoked_at: null,
+        })
+        .select()
+        .single();
+
+      if (insertError || !consent) {
+        throw new Error(`Failed to record AI consent: ${insertError?.message}`);
+      }
+
+      await admin.from('audit_events').insert({
+        case_id: params.id,
+        actor_type: 'USER',
+        actor_id: user.id,
+        entity_type: 'AI_CONSENT',
+        entity_id: consent.id,
+        action: 'AI_CONSENT_GRANTED',
+        metadata: {
+          policyVersion: '1.0',
+          provider,
+          scope: { mode: 'MINIMIZE' },
+        },
+      });
+
+      return {
+        success: true,
+        consented: true,
+        policyVersion: '1.0',
+        grantedAt: consent.granted_at,
+      };
+    },
+  },
+
+  // 3. DELETE /cases/:id/consent — Revoke AI consent and immediately terminate tasks (§15.2)
+  {
+    method: 'DELETE',
+    pattern: '/cases/:id/consent',
+    auth: 'user',
+    handler: async ({ user, db, admin, params }) => {
+      const check = await assertCaseOwner(db, params.id, user.id);
+      if (!check.ok) return check.response;
+
+      const revokedAt = new Date().toISOString();
+
+      const { error: updateError } = await admin
+        .from('ai_consents')
+        .update({ revoked_at: revokedAt })
+        .eq('case_id', params.id)
+        .is('revoked_at', null);
+
+      if (updateError) {
+        throw new Error(`Failed to revoke AI consent: ${updateError.message}`);
+      }
+
+      // Spec §15.2: Revocation terminates running and queued tasks for the case immediately
+      const { data: runs } = await admin
+        .from('analysis_runs')
+        .select('id')
+        .eq('case_id', params.id)
+        .in('status', ['PENDING', 'RUNNING']);
+
+      if (runs && runs.length > 0) {
+        const runIds = runs.map((r: any) => r.id);
+        await admin
+          .from('analysis_tasks')
+          .update({
+            status: 'FAILED',
+            failure_reason: 'Consent revoked by user (§15.2)',
+          })
+          .in('run_id', runIds)
+          .in('status', ['QUEUED', 'RUNNING']);
+
+        await admin
+          .from('analysis_runs')
+          .update({
+            status: 'FAILED',
+            completed_at: revokedAt,
+          })
+          .in('id', runIds);
+      }
+
+      await admin.from('audit_events').insert({
+        case_id: params.id,
+        actor_type: 'USER',
+        actor_id: user.id,
+        entity_type: 'AI_CONSENT',
+        entity_id: params.id,
+        action: 'AI_CONSENT_REVOKED',
+        metadata: {
+          revokedAt,
+        },
+      });
+
+      return {
+        success: true,
+        consented: false,
+        revoked: true,
+      };
+    },
+  },
+
+  // 4. GET /cases/:id/runs — List analysis runs for a case
   {
     method: 'GET',
     pattern: '/cases/:id/runs',
     auth: 'user',
     handler: async ({ user, db, params }) => {
-      // Verify case ownership
-      const { data: caseRow } = await db
-        .from('cases')
-        .select('id')
-        .eq('id', params.id)
-        .eq('owner_id', user.id)
-        .single();
-
-      if (!caseRow) {
-        return new Response(
-          JSON.stringify({ error: { code: 'NOT_FOUND', message: `Case ${params.id} not found` } }),
-          { status: 404, headers: { 'Content-Type': 'application/json' } }
-        );
-      }
+      const check = await assertCaseOwner(db, params.id, user.id);
+      if (!check.ok) return check.response;
 
       const { data: runs, error } = await db
         .from('analysis_runs')
@@ -63,7 +210,7 @@ export const analysisRoutes: RouteDef[] = [
     },
   },
 
-  // Get single analysis run with task progress
+  // 5. GET /analysis-runs/:id — Get single analysis run with task progress
   {
     method: 'GET',
     pattern: '/analysis-runs/:id',
@@ -116,7 +263,7 @@ export const analysisRoutes: RouteDef[] = [
     },
   },
 
-  // Start / trigger new analysis run (§10, §11, §17.4)
+  // 6. POST /cases/:id/runs — Start / trigger new analysis run (§10, §11, §15.2, §17.4)
   {
     method: 'POST',
     pattern: '/cases/:id/runs',
@@ -127,21 +274,37 @@ export const analysisRoutes: RouteDef[] = [
       const input = StartAnalysisInputSchema.parse(body || {});
 
       // 1. Verify case ownership
-      const { data: caseRow } = await db
-        .from('cases')
-        .select('id')
-        .eq('id', params.id)
-        .eq('owner_id', user.id)
-        .single();
+      const check = await assertCaseOwner(db, params.id, user.id);
+      if (!check.ok) return check.response;
 
-      if (!caseRow) {
+      // 2. Invariant §15.2: Verify active AI consent exists for this case before queuing any tasks
+      const { data: consentRow } = await db
+        .from('ai_consents')
+        .select('policy_version, revoked_at')
+        .eq('case_id', params.id)
+        .is('revoked_at', null)
+        .order('granted_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const consentResult = checkConsent(
+        consentRow ? { policyVersion: consentRow.policy_version, revokedAt: consentRow.revoked_at } : null,
+        '1.0'
+      );
+
+      if (!consentResult.ok) {
         return new Response(
-          JSON.stringify({ error: { code: 'NOT_FOUND', message: `Case ${params.id} not found` } }),
-          { status: 404, headers: { 'Content-Type': 'application/json' } }
+          JSON.stringify({
+            error: {
+              code: 'CONSENT_REQUIRED',
+              message: `AI analysis requires active consent (§15.2). Reason: ${consentResult.reason}`,
+            },
+          }),
+          { status: 403, headers: { 'Content-Type': 'application/json' } }
         );
       }
 
-      // 2. Load evidence items for the case
+      // 3. Load evidence items for the case
       let query = db
         .from('evidence_items')
         .select('id, display_id, processing_status, deleted_at')
@@ -176,7 +339,7 @@ export const analysisRoutes: RouteDef[] = [
       // Build evidence scope array (array of display IDs for worker scope parser)
       const evidenceScope = eligibleEvidence.map((e) => e.display_id);
 
-      // 3. Create analysis_runs record
+      // 4. Create analysis_runs record
       const { data: run, error: runError } = await admin
         .from('analysis_runs')
         .insert({
@@ -192,7 +355,7 @@ export const analysisRoutes: RouteDef[] = [
         throw new Error(`Failed to create analysis run: ${runError?.message}`);
       }
 
-      // 4. Default task pipeline if not specified (only queue registered prompts)
+      // 5. Default task pipeline if not specified (only queue registered prompts)
       const taskTypes = input.taskTypes && input.taskTypes.length > 0
         ? input.taskTypes
         : ['extraction', 'contradiction_consolidation'];
@@ -222,7 +385,7 @@ export const analysisRoutes: RouteDef[] = [
           schema_version: 'v1',
           provider,
           model,
-          minimization_metadata: { evidenceCount: evidenceScope.length },
+          minimization_metadata: { mode: 'MINIMIZE', evidenceCount: evidenceScope.length },
         };
       });
 
@@ -235,7 +398,7 @@ export const analysisRoutes: RouteDef[] = [
         throw new Error(`Failed to queue analysis tasks: ${tasksError.message}`);
       }
 
-      // 5. Emit audit event
+      // 6. Emit audit event
       await admin.from('audit_events').insert({
         case_id: params.id,
         actor_type: 'USER',
@@ -260,14 +423,13 @@ export const analysisRoutes: RouteDef[] = [
     },
   },
 
-  // Alias POST /cases/:id/analyze -> starts analysis run
+  // 7. Alias POST /cases/:id/analyze -> starts analysis run
   {
     method: 'POST',
     pattern: '/cases/:id/analyze',
     auth: 'user',
     input: StartAnalysisInputSchema,
     handler: async (ctx) => {
-      // Delegate to /cases/:id/runs handler
       const runsHandler = analysisRoutes.find((r) => r.method === 'POST' && r.pattern === '/cases/:id/runs')!;
       return runsHandler.handler(ctx);
     },

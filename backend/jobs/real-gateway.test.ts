@@ -322,4 +322,127 @@ describe('RealGatewayAdapter — STEP 14 (Member B Spec v1.4 §7.6)', () => {
       'Unsupported AI_PROVIDER "unknown". Use "groq", "grok", or "mock".',
     );
   });
+
+  // -------------------------------------------------------------------------
+  // 10. Strict Minimization before Prompt & Provider Invocation (§15.2)
+  // -------------------------------------------------------------------------
+  it('strictly minimizes PII (emails and phone numbers) in scope and prompt before calling provider', async () => {
+    const piiSegments = [
+      {
+        evidence_display_id: 'EV-300',
+        ordinal: 1,
+        segment_text: 'Please send GDPR erasure requests to dpo@acme.example or call +1-555-555-0199.',
+        locator_type: 'CHAR_RANGE',
+        locator: { start: 0, end: 74 },
+      },
+    ];
+
+    let capturedReq: any = null;
+    const provider = {
+      healthCheck: vi.fn().mockResolvedValue({ ok: true, provider: 'mock' }),
+      analyze: vi.fn().mockImplementation(async (req) => {
+        capturedReq = req;
+        return {
+          taskType: 'extraction' as const,
+          schemaName: 'CandidateFindingList',
+          schemaVersion: '1.0',
+          candidates: [VALID_CANDIDATE],
+          rawProviderMetadata: { provider: 'mock', model: 'mock-1', latencyMs: 5 },
+        };
+      }),
+    };
+
+    const adapter = new RealGatewayAdapter({ provider });
+    const piiScopeMap = new Map([
+      [scopeKey('EV-300', 1), { evidenceId: 'ev-300', segmentId: 'seg-300-1', locatorType: 'CHAR_RANGE', locator: { start: 0, end: 74 } }],
+    ]);
+
+    await adapter.run({ ...BASE_TASK, input_evidence_scope: 'EV-300' }, piiScopeMap, piiSegments);
+
+    expect(capturedReq).toBeDefined();
+    // Raw email and phone MUST NOT be present in prompt or evidence scope
+    expect(capturedReq.renderedPrompt.user).not.toContain('dpo@acme.example');
+    expect(capturedReq.renderedPrompt.user).not.toContain('+1-555-555-0199');
+    expect(capturedReq.renderedPrompt.user).toContain('[EMAIL_1]');
+    expect(capturedReq.renderedPrompt.user).toContain('[PHONE_1]');
+
+    // Minimized input metadata recorded
+    expect(capturedReq.minimizedInput).toMatchObject({
+      mode: 'MINIMIZE',
+      counts: expect.objectContaining({
+        placeholdersCreated: 2,
+      }),
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. Local Detokenization of Provider Candidates (§15.2)
+  // -------------------------------------------------------------------------
+  it('detokenizes placeholder tokens in returned candidates back to original evidence values', async () => {
+    const piiSegments = [
+      {
+        evidence_display_id: 'EV-300',
+        ordinal: 1,
+        segment_text: 'Please send GDPR erasure requests to dpo@acme.example.',
+        locator_type: 'CHAR_RANGE',
+        locator: { start: 0, end: 54 },
+      },
+    ];
+
+    const tokenizedCandidate = {
+      findingType: 'ENTITY',
+      statement: 'DPO contact is [EMAIL_1]',
+      evidenceBasis: 'EXTRACTED',
+      candidateConfidence: 0.95,
+      citations: [{ evidenceDisplayId: 'EV-300', segmentOrdinal: 1 }],
+      structuredPayload: { entityName: '[EMAIL_1]' },
+    };
+
+    const provider = {
+      healthCheck: vi.fn().mockResolvedValue({ ok: true, provider: 'mock' }),
+      analyze: vi.fn().mockResolvedValue({
+        taskType: 'extraction' as const,
+        schemaName: 'CandidateFindingList',
+        schemaVersion: '1.0',
+        candidates: [tokenizedCandidate],
+        rawProviderMetadata: { provider: 'mock', model: 'mock-1', latencyMs: 5 },
+      }),
+    };
+
+    const adapter = new RealGatewayAdapter({ provider });
+    const piiScopeMap = new Map([
+      [scopeKey('EV-300', 1), { evidenceId: 'ev-300', segmentId: 'seg-300-1', locatorType: 'CHAR_RANGE', locator: { start: 0, end: 54 } }],
+    ]);
+
+    const result = await adapter.run({ ...BASE_TASK, input_evidence_scope: 'EV-300' }, piiScopeMap, piiSegments);
+
+    const candidates = (result.validated_output as any).candidates;
+    expect(candidates[0].statement).toBe('DPO contact is dpo@acme.example');
+    expect(candidates[0].structuredPayload.entityName).toBe('dpo@acme.example');
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Defense-in-depth Consent Check (§15.2)
+  // -------------------------------------------------------------------------
+  it('rejects execution when checkConsent hook reports no active consent', async () => {
+    const provider = {
+      healthCheck: vi.fn().mockResolvedValue({ ok: true, provider: 'mock' }),
+      analyze: vi.fn().mockResolvedValue({
+        taskType: 'extraction' as const,
+        schemaName: 'CandidateFindingList',
+        schemaVersion: '1.0',
+        candidates: [VALID_CANDIDATE],
+      }),
+    };
+
+    const adapter = new RealGatewayAdapter({
+      provider,
+      checkConsent: async () => ({ ok: false, reason: 'REVOKED' }),
+    });
+
+    await expect(adapter.run(BASE_TASK, SCOPE_MAP, SEGMENTS)).rejects.toThrow(
+      'AI consent verification failed: REVOKED'
+    );
+    expect(provider.analyze).not.toHaveBeenCalled();
+  });
 });

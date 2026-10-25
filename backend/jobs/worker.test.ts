@@ -168,4 +168,96 @@ describe('Analysis Worker — Phase 3 (Member B Spec v1.4 §7.6)', () => {
       expect(worker).toBeDefined();
     });
   });
+
+  describe('Consent Verification (§15.2 Invariant)', () => {
+    it('throws and fails task when case has no active AI consent in ai_consents', async () => {
+      const mockAdmin = {
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'analysis_runs') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  single: vi.fn().mockResolvedValue({
+                    data: { case_id: 'case-no-consent' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'ai_consents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  is: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: null,
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return {};
+        }),
+      };
+
+      const worker = new AnalysisWorker();
+      (worker as any).admin = mockAdmin;
+
+      await expect((worker as any).processTask(MOCK_TASK)).rejects.toThrow(
+        'AI consent validation failed (§15.2): NO_CONSENT'
+      );
+    });
+
+    it('throws and fails task when AI consent has been revoked', async () => {
+      const mockAdmin = {
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'analysis_runs') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  single: vi.fn().mockResolvedValue({
+                    data: { case_id: 'case-revoked-consent' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'ai_consents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  is: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: { policy_version: '1.0', revoked_at: '2026-10-25T00:00:00Z' },
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return {};
+        }),
+      };
+
+      const worker = new AnalysisWorker();
+      (worker as any).admin = mockAdmin;
+
+      await expect((worker as any).processTask(MOCK_TASK)).rejects.toThrow(
+        'AI consent validation failed (§15.2): REVOKED'
+      );
+    });
+  });
 });

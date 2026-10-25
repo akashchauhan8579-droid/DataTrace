@@ -6,6 +6,7 @@ import { parseEvidenceScope } from './evidence-scope';
 import type { AIGatewayInterface, QueuedTask } from './types';
 import { MockGateway } from './mock-gateway';
 import { RealGatewayAdapter } from './real-gateway';
+import { checkConsent } from '../../ai/gateway/consent';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:54321';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-service-role-key';
@@ -173,6 +174,29 @@ export class AnalysisWorker {
     }
     if (!run) {
       throw new Error(`Analysis run ${task.run_id} not found`);
+    }
+
+    // Invariant §15.2: Verify active AI consent for this case before processing
+    const { data: consentRow, error: consentError } = await this.admin
+      .from('ai_consents')
+      .select('policy_version, revoked_at')
+      .eq('case_id', run.case_id)
+      .is('revoked_at', null)
+      .order('granted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (consentError) {
+      throw new Error(`Failed to verify AI consent for case ${run.case_id}: ${consentError.message}`);
+    }
+
+    const consentCheck = checkConsent(
+      consentRow ? { policyVersion: consentRow.policy_version, revokedAt: consentRow.revoked_at } : null,
+      '1.0'
+    );
+
+    if (!consentCheck.ok) {
+      throw new Error(`AI consent validation failed (§15.2): ${consentCheck.reason}`);
     }
 
     const requestedScope = parseEvidenceScope(task.input_evidence_scope);
@@ -384,7 +408,8 @@ export class AnalysisWorker {
   }
 
   private async failTask(task: QueuedTask, reason: string): Promise<void> {
-    const retryCount = task.retry_count + 1;
+    const isConsentFailure = reason.includes('AI consent validation failed');
+    const retryCount = isConsentFailure ? MAX_RETRIES : task.retry_count + 1;
     const isFinal = retryCount >= MAX_RETRIES;
     const { data, error } = await this.admin
       .from('analysis_tasks')

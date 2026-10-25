@@ -23,6 +23,7 @@ export default function CaseDashboardPage() {
 
   // Analysis / Consent state
   const [showConsent, setShowConsent] = useState(false);
+  const [hasConsent, setHasConsent] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
@@ -83,18 +84,16 @@ export default function CaseDashboardPage() {
     setError(null);
 
     try {
-      // Gracefully attempt consent call (§15.2 backend gap check)
-      try {
-        await api.analysis.setConsent(caseId);
-      } catch {
-        // Backend consent route might be missing; proceed with UX gate
-      }
+      // Invariant §15.2: Explicitly record AI consent for this case.
+      // If this call fails, HALT immediately — do NOT continue to start analysis!
+      await api.analysis.setConsent(caseId);
+      setHasConsent(true);
 
       const res = await api.analysis.start(caseId);
       setActiveRunId(res.runId);
       await loadData();
     } catch (err: any) {
-      setError(err.message || 'Failed to start analysis run');
+      setError(err.message || 'Failed to authorize and start analysis run');
       setAnalyzing(false);
     }
   };

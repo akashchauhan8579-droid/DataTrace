@@ -123,11 +123,21 @@ export const api = {
       apiFetch<{ run: AnalysisRun }>(`analysis-runs/${runId}`),
     listRuns: (caseId: string) =>
       apiFetch<{ runs: AnalysisRun[] }>(`cases/${caseId}/runs`),
-    // Consent endpoints — not yet implemented in backend (§15.2 gap)
+    // Consent endpoints (§15.2)
     setConsent: (caseId: string) =>
-      apiFetch<{ success: boolean }>(`cases/${caseId}/consent`, { method: 'POST' }),
+      apiFetch<{ success: boolean; consented: boolean; policyVersion?: string; grantedAt?: string }>(
+        `cases/${caseId}/consent`,
+        { method: 'POST' }
+      ),
     revokeConsent: (caseId: string) =>
-      apiFetch<{ success: boolean }>(`cases/${caseId}/consent`, { method: 'DELETE' }),
+      apiFetch<{ success: boolean; consented: boolean; revoked?: boolean }>(
+        `cases/${caseId}/consent`,
+        { method: 'DELETE' }
+      ),
+    getConsent: (caseId: string) =>
+      apiFetch<{ consented: boolean; policyVersion?: string; provider?: string; grantedAt?: string }>(
+        `cases/${caseId}/consent`
+      ),
   },
 
   matrix: {

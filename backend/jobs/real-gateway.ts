@@ -8,6 +8,7 @@ import { createGrokProvider } from '../../ai/providers/grok';
 import { createGroqProvider } from '../../ai/providers/groq';
 import type { AIProvider } from '../../ai/providers/interface';
 import { parseEnvelope } from '../../contracts/schemas/findings';
+import { buildScope, detokenize, type ScopeItemInput } from '../../ai/gateway/minimizer';
 
 // Import prompts to ensure registration
 import '../../ai/prompts/extraction.v1';
@@ -17,21 +18,37 @@ import '../../ai/prompts/reportDraft.v1';
 export interface RealGatewayOptions {
   provider?: AIProvider;
   fixturesDir?: string;
+  checkConsent?: (caseId: string) => Promise<{ ok: boolean; reason?: string }>;
+}
+
+function detokenizeDeep<T>(value: T, placeholders: Map<string, string>): T {
+  if (placeholders.size === 0 || value === undefined || value === null) return value;
+  const json = JSON.stringify(value);
+  const detokenizedJson = detokenize(json, placeholders);
+  try {
+    return JSON.parse(detokenizedJson);
+  } catch {
+    return value;
+  }
 }
 
 /**
  * RealGatewayAdapter — Adapts the Master Spec v1.4 Gateway & Provider architecture
  * to the AIGatewayInterface consumed by AnalysisWorker.
  *
- * It uses the registered prompt registry and either:
- * - GroqProvider (when AI_PROVIDER=groq and GROQ_API_KEY is configured)
- * - GrokProvider (when AI_PROVIDER=grok and XAI_API_KEY is configured)
- * - MockProvider (replaying recorded fixtures deterministically offline)
+ * Enforces Invariant §15.2 (Consent & Minimization):
+ * - Evidence text is strictly minimized (PII/emails/phones masked, secrets/footers stripped)
+ *   via buildScope before being sent to any provider or prompt.
+ * - Returned candidate assertions are detokenized locally before envelope validation.
+ * - Raw evidence is NEVER transmitted to external model providers.
  */
 export class RealGatewayAdapter implements AIGatewayInterface {
   private readonly provider: AIProvider;
+  private readonly checkConsentFn?: (caseId: string) => Promise<{ ok: boolean; reason?: string }>;
 
   constructor(options: RealGatewayOptions = {}) {
+    this.checkConsentFn = options.checkConsent;
+
     if (options.provider) {
       this.provider = options.provider;
     } else {
@@ -84,7 +101,15 @@ export class RealGatewayAdapter implements AIGatewayInterface {
   ): Promise<TaskResult> {
     const start = Date.now();
 
-    // 1. Group segments by evidence display id to form prompt scope
+    // 0. Defense-in-depth consent check if configured
+    if (this.checkConsentFn) {
+      const consentCheck = await this.checkConsentFn(task.run_id);
+      if (!consentCheck.ok) {
+        throw new Error(`AI consent verification failed: ${consentCheck.reason || 'NO_CONSENT'}`);
+      }
+    }
+
+    // 1. Group segments by evidence display id to prepare for minimization
     const scopeByEvidence = new Map<
       string,
       Array<{
@@ -106,12 +131,32 @@ export class RealGatewayAdapter implements AIGatewayInterface {
       scopeByEvidence.set(seg.evidence_display_id, list);
     }
 
-    const promptScope = Array.from(scopeByEvidence.entries()).map(([dispId, segs]) => ({
-      evidenceDisplayId: dispId,
-      segments: segs,
-    }));
+    // Convert into ScopeItemInput format for minimizer
+    const scopeItemInputs: ScopeItemInput[] = Array.from(scopeByEvidence.entries()).map(
+      ([displayId, segs]) => ({
+        evidenceId: displayId,
+        evidenceDisplayId: displayId,
+        status: 'PROCESSED',
+        hashOk: true,
+        segments: segs.map((s) => ({
+          segmentId: `${displayId}-${s.ordinal}`,
+          ordinal: s.ordinal,
+          locatorType: s.locatorType,
+          locator: s.locator,
+          text: s.text,
+        })),
+      })
+    );
 
-    // 2. Resolve prompt from registry
+    // 2. Apply strict minimization (§15.2) before passing text to prompt or provider
+    const scopeResult = buildScope(scopeItemInputs, {
+      mode: 'MINIMIZE',
+      allowRaw: false,
+    });
+
+    const minimizedScope = scopeResult.scope;
+
+    // 3. Resolve prompt from registry
     let promptId = task.prompt_id;
     let promptVersion = task.prompt_version;
     if (promptId.includes('.')) {
@@ -124,14 +169,15 @@ export class RealGatewayAdapter implements AIGatewayInterface {
       getPrompt(promptId, promptVersion) ??
       getPrompt(task.task_type, 'v1');
 
+    // Build rendered prompt using MINIMIZED scope, never raw evidence text
     const renderedPrompt = promptDef
-      ? promptDef.build({ scope: promptScope })
+      ? promptDef.build({ scope: minimizedScope })
       : {
           system: 'You are an extraction engine for DataTrace.',
-          user: `Task: extract candidate findings from ${segments.length} segments.`,
+          user: `Task: extract candidate findings from ${minimizedScope.length} minimized evidence items.`,
         };
 
-    // 3. Invoke provider
+    // 4. Invoke provider with minimized scope and metadata
     const canonicalReq = {
       taskType: task.task_type,
       schema: { name: task.schema_name, version: task.schema_version },
@@ -139,15 +185,24 @@ export class RealGatewayAdapter implements AIGatewayInterface {
         id: promptDef?.id ?? promptId,
         version: promptDef?.version ?? promptVersion,
       },
-      evidenceScope: promptScope,
-      minimizedInput: {},
+      evidenceScope: minimizedScope,
+      minimizedInput: {
+        mode: 'MINIMIZE',
+        counts: scopeResult.metadata.counts,
+      },
       renderedPrompt,
     };
 
     const providerResp = await this.provider.analyze(canonicalReq);
 
-    // 4. Validate output envelope
-    const parsedEnv = parseEnvelope({ candidates: providerResp.candidates });
+    // 5. Detokenize returned candidates to restore masked placeholders locally (§15.2)
+    const detokenizedCandidates = detokenizeDeep(
+      providerResp.candidates,
+      scopeResult.placeholders
+    );
+
+    // 6. Validate output envelope with detokenized candidates
+    const parsedEnv = parseEnvelope({ candidates: detokenizedCandidates });
     if (!parsedEnv.ok) {
       throw new Error(`AI provider returned an invalid candidates envelope: ${parsedEnv.detail ?? 'invalid envelope'}`);
     }
