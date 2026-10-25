@@ -1,13 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   createSignedState,
   verifySignedState,
   MockGmailClient,
+  LiveGmailClient,
   getGmailClient,
 } from './gmail';
 import { encryptToken, decryptToken } from './tokenVault';
 import { computeSha256, parseEmail } from '../ingestion';
 import { assertCaseOwner } from '../../database/security/assertCaseOwner';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe('P1-0 One-Shot Gmail Import & Token Vault (Spec §10.6, §15.9, T24–T29)', () => {
   const testUserId = 'u0000000-0000-4000-8000-000000000001';
@@ -29,19 +35,27 @@ describe('P1-0 One-Shot Gmail Import & Token Vault (Spec §10.6, §15.9, T24–T
 
     it('rejects state if HMAC signature is tampered with', () => {
       const state = createSignedState(testUserId);
-      const parts = state.split('.');
-      expect(parts.length).toBe(3);
+      const [payload, signature] = state.split('.');
+      expect(payload).toBeDefined();
+      expect(signature).toMatch(/^[a-f0-9]{64}$/);
 
-      // Tamper signature
-      const tampered = `${parts[0]}.${parts[1]}.tampered_sig_12345`;
+      const tampered = `${payload}.${'0'.repeat(64)}`;
       expect(verifySignedState(tampered, testUserId)).toBe(false);
     });
 
-    it('rejects state if timestamp is expired (> 15 minutes)', () => {
-      // Create state 20 minutes in the past
-      const pastTime = Date.now() - 20 * 60 * 1000;
+    it('rejects state if timestamp is expired (> 10 minutes)', () => {
+      const pastTime = Date.now() - 11 * 60 * 1000;
       const state = createSignedState(testUserId, pastTime);
       expect(verifySignedState(state, testUserId)).toBe(false);
+    });
+
+    it('includes a high-entropy nonce and rejects future-dated state', () => {
+      const state = createSignedState(testUserId);
+      const [payload] = state.split('.');
+      const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+      expect(parsed.userId).toBe(testUserId);
+      expect(parsed.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(verifySignedState(createSignedState(testUserId, Date.now() + 1000), testUserId)).toBe(false);
     });
 
     it('rejects malformed state structures', () => {
@@ -99,6 +113,86 @@ describe('P1-0 One-Shot Gmail Import & Token Vault (Spec §10.6, §15.9, T24–T
       expect(threadList.threads.length).toBeGreaterThan(0);
       expect(threadList.threads[0].threadId).toBe('th_acme_erasure_01');
       expect(threadList.threads[0].subject).toContain('GDPR Article 17 Erasure Request');
+    });
+
+    describe('CI and demo client selection', () => {
+      it('forces the mock client in test and demo environments', () => {
+        vi.stubEnv('GMAIL_MODE', 'live');
+        vi.stubEnv('NODE_ENV', 'test');
+        expect(getGmailClient()).toBeInstanceOf(MockGmailClient);
+
+        vi.stubEnv('NODE_ENV', 'development');
+        vi.stubEnv('DEMO_MODE', 'true');
+        expect(getGmailClient()).toBeInstanceOf(MockGmailClient);
+
+        vi.stubEnv('DEMO_MODE', 'false');
+        vi.stubEnv('CI', 'true');
+        expect(getGmailClient()).toBeInstanceOf(MockGmailClient);
+      });
+
+      describe('Live OAuth token lifecycle', () => {
+        it('requests offline read-only access and verifies the exact granted scope', async () => {
+          const authUrl = new URL(new LiveGmailClient().getAuthUrl('signed-state'));
+          expect(authUrl.searchParams.get('scope')).toBe('https://www.googleapis.com/auth/gmail.readonly');
+          expect(authUrl.searchParams.get('access_type')).toBe('offline');
+          expect(authUrl.searchParams.get('prompt')).toBe('consent');
+
+          const fetchMock = vi.fn()
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+              access_token: 'access-token',
+              refresh_token: 'refresh-token',
+              expires_in: 3600,
+              scope: 'https://www.googleapis.com/auth/gmail.readonly',
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ email: 'synthetic@example.test' }), { status: 200 }));
+          vi.stubGlobal('fetch', fetchMock);
+
+          const result = await new LiveGmailClient().exchangeCode('authorization-code');
+          expect(result.scope).toBe('https://www.googleapis.com/auth/gmail.readonly');
+          expect(result.email).toBe('synthetic@example.test');
+          expect(result.accessToken).toBe('access-token');
+        });
+
+        it('rejects a Google grant with a broader scope', async () => {
+          const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            access_token: 'access-token',
+            refresh_token: 'refresh-token',
+            scope: 'https://www.googleapis.com/auth/gmail.modify',
+          }), { status: 200 }));
+          vi.stubGlobal('fetch', fetchMock);
+
+          await expect(new LiveGmailClient().exchangeCode('authorization-code'))
+            .rejects.toMatchObject({ code: 'UPSTREAM' });
+          expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        it('exchanges the stored refresh token for a short-lived access token', async () => {
+          const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            access_token: 'short-lived-access-token',
+            expires_in: 3600,
+          }), { status: 200 }));
+          vi.stubGlobal('fetch', fetchMock);
+
+          const client = new LiveGmailClient();
+          await expect(client.refreshAccessToken('encrypted-at-rest-refresh-token'))
+            .resolves.toBe('short-lived-access-token');
+
+          const request = fetchMock.mock.calls[0];
+          expect(request[0]).toBe('https://oauth2.googleapis.com/token');
+          expect(String(request[1].body)).toContain('grant_type=refresh_token');
+          expect(String(request[1].body)).toContain('refresh_token=encrypted-at-rest-refresh-token');
+        });
+
+        it('classifies invalid_grant without exposing Google error details', async () => {
+          vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+            error: 'invalid_grant',
+            error_description: 'private provider detail',
+          }), { status: 400 })));
+
+          await expect(new LiveGmailClient().refreshAccessToken('refresh-token'))
+            .rejects.toMatchObject({ code: 'AUTH_EXPIRED', message: 'Gmail authorization expired' });
+        });
+      });
     });
 
     it('retrieves raw RFC-822 email bytes and computes verifiable SHA-256', async () => {

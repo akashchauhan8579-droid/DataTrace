@@ -188,7 +188,7 @@ export const api = {
         nextPageToken?: string;
       }>(`gmail/threads${qs ? `?${qs}` : ''}`);
     },
-    importThread: (caseId: string, threadId: string, maxMessages = 10) =>
+    importThread: (caseId: string, threadId: string) =>
       apiFetch<{
         items: Array<{
           id: string;
@@ -199,7 +199,7 @@ export const api = {
         truncated: boolean;
       }>(`cases/${caseId}/evidence/gmail`, {
         method: 'POST',
-        body: JSON.stringify({ threadId, maxMessages }),
+        body: JSON.stringify({ threadId }),
       }),
     disconnect: () =>
       apiFetch<{ disconnected: boolean }>('gmail/connection', { method: 'DELETE' }),

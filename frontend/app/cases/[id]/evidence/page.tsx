@@ -124,7 +124,7 @@ export default function EvidenceUploadPage() {
     setError(null);
     setGmailImportResult(null);
     try {
-      const res = await api.gmail.importThread(caseId, threadId, 10);
+      const res = await api.gmail.importThread(caseId, threadId);
       setGmailImportResult(res);
     } catch (err: any) {
       setError(err.message || 'Failed to import messages from thread');
@@ -415,6 +415,9 @@ export default function EvidenceUploadPage() {
 
                 <p className="text-xs font-sans text-ink leading-relaxed">
                   DataTrace does not sync, continuously scan, or store your mailbox. Authentication grants one-time, read-only access to import specific message threads into this case dossier as verified evidence items.
+                </p>
+                <p className="text-xs font-mono text-amber-900 bg-amber-50 border border-amber-200 p-3">
+                  Testing only: connect synthetic test accounts. Do not use a personal or production mailbox.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">

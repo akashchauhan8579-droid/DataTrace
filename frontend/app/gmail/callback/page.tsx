@@ -107,7 +107,10 @@ function GmailCallbackInner() {
                 Connected mailbox: <strong className="font-semibold">{email}</strong>
               </p>
               <p className="text-xs text-green-700">
-                OAuth token sealed in AES-256-GCM token vault. Read-only scope (<code className="font-mono">gmail.readonly</code>) verified.
+                Refresh token sealed with AES-256-GCM; short-lived access tokens stay in server memory. Read-only scope (<code className="font-mono">gmail.readonly</code>) verified.
+              </p>
+              <p className="text-xs text-amber-800">
+                Testing only: use synthetic test accounts, not a personal or production mailbox.
               </p>
             </div>
 

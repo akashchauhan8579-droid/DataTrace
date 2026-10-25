@@ -1,7 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { GmailThreadList } from '../../contracts/schemas/gmail';
+import { GmailIdSchema } from '../../contracts/schemas/gmail';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'mock-google-client-id';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'mock-google-client-secret';
@@ -10,45 +11,69 @@ const GOOGLE_REDIRECT_URI =
 const STATE_SECRET =
   process.env.GMAIL_STATE_SECRET || 'datatrace-synthetic-hmac-state-secret-32b';
 
-/**
- * Creates an HMAC-signed state parameter bound to a specific user and expiring in 15 minutes.
- * Format: userId.timestamp.hmac(userId.timestamp)
- */
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
 export function createSignedState(userId: string, customTimestamp?: number): string {
-  const timestamp = (customTimestamp !== undefined ? customTimestamp : Date.now()).toString();
-  const payload = `${userId}.${timestamp}`;
-  const sig = createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
-  return `${payload}.${sig}`;
+  const payload = Buffer.from(JSON.stringify({
+    userId,
+    issuedAt: customTimestamp ?? Date.now(),
+    nonce: randomBytes(32).toString('base64url'),
+  })).toString('base64url');
+  const signature = createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
+  return `${payload}.${signature}`;
 }
 
-/**
- * Verifies that the state parameter has not been tampered with, is bound to userId,
- * and has not expired (TTL = 15 minutes).
- */
 export function verifySignedState(state: string, expectedUserId: string): boolean {
   try {
     const parts = state.split('.');
-    if (parts.length !== 3) return false;
-    const [userId, timestampStr, receivedSig] = parts;
+    if (parts.length !== 2) return false;
+    const [payload, receivedSig] = parts;
+    if (!/^[a-f0-9]{64}$/.test(receivedSig)) return false;
+    const expectedSig = createHmac('sha256', STATE_SECRET).update(payload).digest();
+    const suppliedSig = Buffer.from(receivedSig, 'hex');
+    if (!timingSafeEqual(expectedSig, suppliedSig)) return false;
 
-    if (userId !== expectedUserId) return false;
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      userId?: unknown;
+      issuedAt?: unknown;
+      nonce?: unknown;
+    };
+    if (
+      decoded.userId !== expectedUserId ||
+      typeof decoded.issuedAt !== 'number' ||
+      !Number.isSafeInteger(decoded.issuedAt) ||
+      typeof decoded.nonce !== 'string' ||
+      !/^[A-Za-z0-9_-]{43}$/.test(decoded.nonce)
+    ) return false;
 
-    // Check expiration (15 minutes)
-    const timestamp = parseInt(timestampStr, 10);
-    if (isNaN(timestamp) || Date.now() - timestamp > 15 * 60 * 1000) {
-      return false;
-    }
-
-    const payload = `${userId}.${timestampStr}`;
-    const expectedSig = createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
-
-    const expectedBuf = Buffer.from(expectedSig, 'hex');
-    const receivedBuf = Buffer.from(receivedSig, 'hex');
-    if (expectedBuf.length !== receivedBuf.length) return false;
-
-    return timingSafeEqual(expectedBuf, receivedBuf);
+    const age = Date.now() - decoded.issuedAt;
+    return age >= 0 && age <= OAUTH_STATE_TTL_MS;
   } catch {
     return false;
+  }
+}
+
+export class GmailClientError extends Error {
+  constructor(public readonly code: 'AUTH_EXPIRED' | 'UPSTREAM') {
+    super(code === 'AUTH_EXPIRED' ? 'Gmail authorization expired' : 'Gmail service request failed');
+    this.name = 'GmailClientError';
+  }
+}
+
+async function fetchGoogle(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new GmailClientError('UPSTREAM');
+  }
+}
+
+async function readGoogleJson<T>(res: Response): Promise<T> {
+  try {
+    return await res.json() as T;
+  } catch {
+    throw new GmailClientError('UPSTREAM');
   }
 }
 
@@ -57,11 +82,13 @@ export interface GmailAuthResult {
   refreshToken: string;
   email: string;
   expiresIn: number;
+  scope: string;
 }
 
 export interface GmailClient {
   getAuthUrl(state: string): string;
   exchangeCode(code: string): Promise<GmailAuthResult>;
+  refreshAccessToken(refreshToken: string): Promise<string>;
   listThreads(accessToken: string, opts?: { q?: string; pageToken?: string }): Promise<GmailThreadList>;
   getThreadMessageIds(accessToken: string, threadId: string): Promise<string[]>;
   getRawMessage(accessToken: string, messageId: string): Promise<Uint8Array>;
@@ -85,7 +112,7 @@ export class MockGmailClient implements GmailClient {
     return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(
       GOOGLE_REDIRECT_URI
     )}&response_type=code&scope=${encodeURIComponent(
-      'https://www.googleapis.com/auth/gmail.readonly'
+      GMAIL_SCOPE
     )}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
   }
 
@@ -100,7 +127,12 @@ export class MockGmailClient implements GmailClient {
       refreshToken: 'mock-gmail-refresh-token-xyz',
       email: 'jane.doe.test@gmail.com',
       expiresIn: 3600,
+      scope: GMAIL_SCOPE,
     };
+  }
+
+  async refreshAccessToken(_refreshToken: string): Promise<string> {
+    return 'mock-gmail-access-token';
   }
 
   async listThreads(_token: string, _opts?: { q?: string; pageToken?: string }): Promise<GmailThreadList> {
@@ -146,7 +178,7 @@ export class LiveGmailClient implements GmailClient {
     return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(
       GOOGLE_REDIRECT_URI
     )}&response_type=code&scope=${encodeURIComponent(
-      'https://www.googleapis.com/auth/gmail.readonly'
+      GMAIL_SCOPE
     )}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
   }
 
@@ -159,33 +191,72 @@ export class LiveGmailClient implements GmailClient {
       grant_type: 'authorization_code',
     });
 
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    const res = await fetchGoogle('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
     });
 
-    if (!res.ok) {
-      const errBody = await res.text();
-      throw new Error(`Google OAuth code exchange failed (${res.status}): ${errBody}`);
+    const data = await this.readTokenResponse(res);
+    const accessToken = this.requireString(data.access_token);
+    const refreshToken = this.requireString(data.refresh_token);
+    const scope = this.requireString(data.scope);
+    if (scope.trim().split(/\s+/).join(' ') !== GMAIL_SCOPE) {
+      throw new GmailClientError('UPSTREAM');
     }
 
-    const data = (await res.json()) as any;
-    const accessToken = data.access_token;
-    const refreshToken = data.refresh_token;
-
     // Fetch user email using userinfo endpoint
-    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    const userRes = await fetchGoogle('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    const userData = (await userRes.json()) as any;
+    if (!userRes.ok) throw new GmailClientError('UPSTREAM');
+    const userData = await readGoogleJson<{ email?: unknown }>(userRes);
+    if (typeof userData.email !== 'string') throw new GmailClientError('UPSTREAM');
 
     return {
       accessToken,
       refreshToken,
-      email: userData.email || 'user@gmail.com',
-      expiresIn: data.expires_in || 3600,
+      email: userData.email,
+      expiresIn: typeof data.expires_in === 'number' ? data.expires_in : 3600,
+      scope,
     };
+  }
+
+  async refreshAccessToken(refreshToken: string): Promise<string> {
+    const params = new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      grant_type: 'refresh_token',
+    });
+    const res = await fetchGoogle('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+    const data = await this.readTokenResponse(res);
+    return this.requireString(data.access_token);
+  }
+
+  private async readTokenResponse(res: Response): Promise<Record<string, unknown>> {
+    let data: Record<string, unknown>;
+    try {
+      data = await res.json() as Record<string, unknown>;
+    } catch {
+      throw new GmailClientError('UPSTREAM');
+    }
+    if (!res.ok) {
+      if (data.error === 'invalid_grant') throw new GmailClientError('AUTH_EXPIRED');
+      throw new GmailClientError('UPSTREAM');
+    }
+    return data;
+  }
+
+  private requireString(value: unknown): string {
+    if (typeof value !== 'string' || value.length === 0) {
+      throw new GmailClientError('UPSTREAM');
+    }
+    return value;
   }
 
   async listThreads(accessToken: string, opts?: { q?: string; pageToken?: string }): Promise<GmailThreadList> {
@@ -194,15 +265,15 @@ export class LiveGmailClient implements GmailClient {
     if (opts?.q) url.searchParams.set('q', opts.q);
     if (opts?.pageToken) url.searchParams.set('pageToken', opts.pageToken);
 
-    const res = await fetch(url.toString(), {
+    const res = await fetchGoogle(url.toString(), {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!res.ok) {
-      throw new Error(`Gmail API listThreads failed with status ${res.status}`);
+      throw new GmailClientError(res.status === 401 ? 'AUTH_EXPIRED' : 'UPSTREAM');
     }
 
-    const data = (await res.json()) as any;
+    const data = await readGoogleJson<any>(res);
     const rawThreads = data.threads || [];
 
     const summaries = rawThreads.map((t: any) => ({
@@ -221,30 +292,32 @@ export class LiveGmailClient implements GmailClient {
   }
 
   async getThreadMessageIds(accessToken: string, threadId: string): Promise<string[]> {
-    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=minimal`, {
+    if (!GmailIdSchema.safeParse(threadId).success) throw new GmailClientError('UPSTREAM');
+    const res = await fetchGoogle(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${encodeURIComponent(threadId)}?format=minimal`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!res.ok) {
-      throw new Error(`Gmail API getThread failed with status ${res.status}`);
+      throw new GmailClientError(res.status === 401 ? 'AUTH_EXPIRED' : 'UPSTREAM');
     }
 
-    const data = (await res.json()) as any;
+    const data = await readGoogleJson<any>(res);
     return (data.messages || []).map((m: any) => m.id);
   }
 
   async getRawMessage(accessToken: string, messageId: string): Promise<Uint8Array> {
-    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=raw`, {
+    if (!GmailIdSchema.safeParse(messageId).success) throw new GmailClientError('UPSTREAM');
+    const res = await fetchGoogle(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=raw`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!res.ok) {
-      throw new Error(`Gmail API getRawMessage failed with status ${res.status}`);
+      throw new GmailClientError(res.status === 401 ? 'AUTH_EXPIRED' : 'UPSTREAM');
     }
 
-    const data = (await res.json()) as any;
+    const data = await readGoogleJson<any>(res);
     if (!data.raw) {
-      throw new Error('Message does not contain raw RFC-822 data');
+      throw new GmailClientError('UPSTREAM');
     }
 
     // Google uses base64url encoding
@@ -255,6 +328,11 @@ export class LiveGmailClient implements GmailClient {
 }
 
 export function getGmailClient(): GmailClient {
+  if (process.env.NODE_ENV === 'test' || process.env.CI === 'true' || process.env.DEMO_MODE === 'true') {
+    return new MockGmailClient();
+  }
   const mode = process.env.GMAIL_MODE || 'mock';
-  return mode === 'live' ? new LiveGmailClient() : new MockGmailClient();
+  if (mode === 'live') return new LiveGmailClient();
+  if (mode === 'mock') return new MockGmailClient();
+  throw new Error('GMAIL_MODE must be either "live" or "mock"');
 }
