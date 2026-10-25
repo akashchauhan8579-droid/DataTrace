@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GmailImportRequestSchema } from '../../../contracts/schemas/gmail';
 import { parseEmail } from '../../ingestion';
 import { encryptToken } from '../../integrations/tokenVault';
@@ -9,6 +9,16 @@ import { gmailRoutes } from './gmail';
 const USER_ID = 'u0000000-0000-4000-8000-000000000001';
 const CASE_ID = 'c0000000-0000-4000-8000-000000000001';
 const IMPORT_PATH = '/cases/:id/evidence/gmail';
+
+beforeEach(() => {
+  vi.stubEnv('GMAIL_STATE_SECRET', Buffer.alloc(32, 1).toString('base64'));
+  vi.stubEnv('GMAIL_TOKEN_ENC_KEY', Buffer.alloc(32, 2).toString('base64'));
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 function makeContext(options: {
   ownsCase?: boolean;
