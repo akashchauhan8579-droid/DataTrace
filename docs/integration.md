@@ -4,19 +4,19 @@ This board records checked-in implementation against folder ownership and delive
 
 ## Milestone Status: P0-Core, P0-Hardening & P1 Features Complete
 
-All 10 P0-Core items, core P0-Hardening mechanisms, P1-0 (One-Shot Gmail Import), and P1-A (Chronological Timeline & Entity Graph) are 100% implemented, passing 379 tests across 32 test suites with zero TypeScript errors.
+All 10 P0-Core items, core P0-Hardening mechanisms, P1-0 (One-Shot Gmail Import), and P1-A (Chronological Timeline & Entity Graph) are 100% implemented, passing 409 tests across 34 test suites with zero TypeScript errors.
 
 | Area | Current Files | Status |
 |---|---|---|
-| **Shared Contracts** | `contracts/index.ts`, `contracts/normalize.ts`, `contracts/schemas/` | Implemented: Payload schemas, locators, citations, findings, reports, and Gmail schemas (`gmail.ts`) with full Zod validation and unit tests. |
+| **Shared Contracts** | `contracts/index.ts`, `contracts/normalize.ts`, `contracts/schemas/` | Implemented: Payload schemas, locators, citations, findings, reports, and Gmail schemas (`gmail.ts`) with full Zod validation and focused unit tests (`gmail.test.ts`). |
 | **AI Privacy Gateway & Providers** | `ai/gateway/`, `ai/providers/`, `ai/prompts/` | Implemented: Consent check, minimizer, candidate resolver (61 tests), Grok, Groq & Mock providers, prompt registry, extraction v1, contradiction v1, and reportDraft v1. |
 | **Verification Engine & Rules** | `verification/engine.ts`, `verification/rules/` | Implemented: The 6 P0 rules (`citation_integrity.v1`, `provenance.v1`, `claim_verification.v1`, `request_response.v1`, `contradiction_support.v1`, `report_grounding.v1`), matrix evaluator, and source quarantine demotion. |
 | **Backend Ingestion & Storage** | `backend/ingestion/` | Implemented: SHA-256 calculation, RFC-822 email parser, page-level PDF parser, plain text parser, segmenter, and path validator. |
 | **Backend API & Master Router** | `backend/api/`, `frontend/app/api/[[...slug]]/route.ts` | Implemented: Master router, thin adapter, health, cases, evidence, audited signed-URL download (fail-closed), findings, matrix, reports, audit ledger, and Gmail endpoints (`routes/gmail.ts`). |
 | **Analysis Worker** | `backend/jobs/` | Implemented: Atomic PostgreSQL claims, lease recovery, input_evidence_scope isolation, output-hash validation, and candidate persistence. |
-| **Database & Invariants** | `supabase/migrations/` | Implemented: Migrations 001–007 (core tables, findings, RLS, audit hash-chain, invariant triggers, worker functions, `gmail_connections` table). |
+| **Database & Invariants** | `supabase/migrations/` | Implemented: Migrations 001–007 (core tables, findings, RLS, audit hash-chain, invariant triggers, worker functions, `gmail_connections` table, immutable `ingest_source`/`external_ref` trigger). |
 | **Frontend UI (Terrane Aesthetic)** | `frontend/app/`, `frontend/components/` | Implemented: Archival Paper palette, non-bland landing page with live Forensic Workbench, case dashboard, evidence viewer with segment highlight, request-response matrix, report editor, audit ledger, disclaimer footer, Gmail thread picker, chronological timeline, and entity graph. |
-| **Security & Ownership** | `database/security/assertCaseOwner.ts`, `backend/integrations/tokenVault.ts` | Implemented: SELECT-only client grants, no client DELETE, 404 on unowned case access, double-event download audit, AES-256-GCM token encryption. |
+| **Security & Ownership** | `database/security/assertCaseOwner.ts`, `backend/integrations/tokenVault.ts` | Implemented: SELECT-only client grants, no client DELETE, 404 on unowned case access, double-event download audit, AES-256-GCM token encryption, unit tests (`assertCaseOwner.test.ts`). |
 | **Synthetic Test Harness** | `tests/synthetic/`, `backend/integrations/gmail.test.ts` | Implemented: Scenarios 1, 2, 3, 5, 7, 10, S2, cached demo run fixture, replay runner, and tests T24–T29. |
 
 ---
@@ -31,13 +31,26 @@ All 10 P0-Core items, core P0-Hardening mechanisms, P1-0 (One-Shot Gmail Import)
 
 ---
 
+## Member D: Regression Gate (T24–T29)
+
+All T24–T29 security and boundary gates pass in mock mode with zero external Google or AI dependencies:
+
+- **T24 (State / Scope)**: PASS — HMAC state validates user-binding, signature, and expiration; invalid state blocks exchange/connection; auth URL requests exact `gmail.readonly` scope with `access_type=offline` and `prompt=consent`.
+- **T25 (Credentials / Table Isolation)**: PASS — Sentinel refresh token never leaks in status response, import response, logs, or audit metadata; `gmail_connections` client table grants are revoked with RLS enabled.
+- **T26 (Ordinary Evidence Equivalence)**: PASS — Ingestion of raw RFC-822 bytes produces identical SHA-256 hash and segments to standard `.eml` upload; records `ingest_source = 'GMAIL_IMPORT'`; zero AI calls are made during import; enters normal consent-gated pipeline.
+- **T27 (Duplicate / Cap / ID Validation)**: PASS — Importing existing `external_ref` returns `{ duplicate: true }` without 500; thread imports > 10 truncate with `truncated: true`; malicious or invalid Gmail IDs are strictly rejected.
+- **T28 (Ownership / No Connection)**: PASS — `assertCaseOwner` returns 404 NOT_FOUND on cross-case access (zero tenant leakage); missing/expired connection returns 409 `GMAIL_NOT_CONNECTED`.
+- **T29 (Expiry / Disconnect)**: PASS — `invalid_grant` transitions connection status to `EXPIRED` without creating failing evidence items; disconnect removes `gmail_connections` row while leaving all forensic evidence items intact.
+
+---
+
 ## Regression Verification Checks
 
 Run from the `DataTrace` repository root:
 
 | Command | Result |
 |---|---|
-| `npm test` | **Pass** — 32 test files, 379 tests passing |
+| `npm test` | **Pass** — 34 test files, 409 tests passing |
 | `npm run typecheck` | **Pass** — Zero TypeScript errors |
 | `npm --prefix frontend run typecheck` | **Pass** — Zero TypeScript errors in Next.js app |
 | `npm --prefix frontend run build` | **Pass** — Next.js production build succeeds for all routes |

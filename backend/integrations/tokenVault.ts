@@ -1,12 +1,11 @@
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { readBase64Secret } from './secretConfig';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96-bit IV recommended for GCM
 
 function getEncryptionKey(): Buffer {
-  const secret = process.env.GMAIL_TOKEN_ENC_KEY || 'datatrace-synthetic-dev-token-encryption-key-32b';
-  // Normalize secret to exact 32 bytes using SHA-256
-  return createHash('sha256').update(secret, 'utf8').digest();
+  return readBase64Secret('GMAIL_TOKEN_ENC_KEY', 32);
 }
 
 /**

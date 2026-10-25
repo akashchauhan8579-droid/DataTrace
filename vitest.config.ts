@@ -6,6 +6,7 @@ export default defineConfig({
       'ai/**/*.test.ts',
       'backend/**/*.test.ts',
       'contracts/**/*.test.ts',
+      'database/**/*.test.ts',
       'tests/**/*.test.ts',
       'verification/**/*.test.ts',
     ],

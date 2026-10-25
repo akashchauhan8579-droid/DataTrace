@@ -3,6 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { DisclaimerFooter } from '../components/DisclaimerFooter';
+import {
+  AuroraHeroBackground,
+  AuroraTransitionRibbon,
+  AuroraSectionFragment,
+  AuroraWorkbenchGlow,
+} from '../components/AuroraBackground';
 
 export default function LandingPage() {
   // Interactive Live Workbench Demo State (Avoids Trope 18: "no real product demos")
@@ -52,8 +58,12 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="pt-16 pb-20 px-6 border-b border-hairline bg-paper">
-        <div className="max-w-6xl mx-auto">
+      <section className="relative pt-16 pb-20 px-6 border-b border-hairline bg-paper overflow-hidden">
+        {/* Electric-Teal Aurora Borealis Background Effect (#00A6A6) */}
+        <AuroraHeroBackground />
+        <AuroraTransitionRibbon />
+
+        <div className="relative z-10 max-w-6xl mx-auto">
           {/* Eyebrow badge */}
           <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-sm border border-hairline bg-paper-2 text-ink text-[11px] font-mono tracking-widest uppercase mb-6">
             <span className="w-1.5 h-1.5 rounded-full bg-copper" />
@@ -98,8 +108,11 @@ export default function LandingPage() {
             </div>
 
             {/* Right Hero Centerpiece: Live Interactive Forensic Workbench (Avoids Trope 18) */}
-            <div id="workbench" className="lg:col-span-6">
-              <div className="bg-paper-2 border border-hairline rounded-sm overflow-hidden shadow-xs">
+            <div id="workbench" className="lg:col-span-6 relative">
+              {/* Soft atmospheric teal halo behind workbench */}
+              <AuroraWorkbenchGlow />
+
+              <div className="relative z-10 bg-paper-2 border border-hairline rounded-sm overflow-hidden shadow-xs">
                 {/* Workbench Title Bar */}
                 <div className="bg-paper border-b border-hairline px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -295,8 +308,11 @@ export default function LandingPage() {
       </section>
 
       {/* The Epistemic Manifesto Section (Spec §1.5) */}
-      <section id="manifesto" className="py-20 px-6 border-b border-hairline bg-paper-2">
-        <div className="max-w-6xl mx-auto">
+      <section id="manifesto" className="relative py-20 px-6 border-b border-hairline bg-paper-2 overflow-hidden">
+        {/* Subtle Aurora Ambient Fragment */}
+        <AuroraSectionFragment position="right" />
+
+        <div className="relative z-10 max-w-6xl mx-auto">
           <div className="max-w-3xl mb-12">
             <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-copper block mb-2">
               The Architecture of Truth
@@ -432,8 +448,11 @@ export default function LandingPage() {
       </section>
 
       {/* Core Forensic Capabilities Section (Spec §13 & §14) */}
-      <section className="py-20 px-6 border-b border-hairline bg-paper-2">
-        <div className="max-w-6xl mx-auto space-y-12">
+      <section className="relative py-20 px-6 border-b border-hairline bg-paper-2 overflow-hidden">
+        {/* Subtle Aurora Ambient Fragment */}
+        <AuroraSectionFragment position="left" />
+
+        <div className="relative z-10 max-w-6xl mx-auto space-y-12">
           <div className="text-center max-w-2xl mx-auto space-y-2">
             <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-copper">
               Core Capabilities

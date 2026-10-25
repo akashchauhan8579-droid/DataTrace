@@ -14,9 +14,160 @@
   --amber: #D98A4E;
   --copper: #B5562F;
   --umber: #6E3B2A;
+
+  /* Electric-Teal Aurora Borealis Signature Palette */
+  --aurora-teal: #00A6A6;
+  --aurora-teal-rgb: 0, 166, 166;
+  --aurora-teal-dark: #007373;
+  --aurora-teal-dark-rgb: 0, 115, 115;
 }
 
 body {
   background-color: var(--paper);
   color: var(--ink);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Electric-Teal Aurora Borealis Keyframes & Motion Dynamics (25s–45s cycles)
+   Organic, floating, feathered light ribbons on warm ivory paper
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes aurora-ribbon-upper {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1, 1);
+    opacity: 0.88;
+  }
+  30% {
+    transform: translate3d(-28px, 18px, 0) rotate(1.8deg) scale(1.05, 0.96);
+    opacity: 1;
+  }
+  65% {
+    transform: translate3d(22px, -14px, 0) rotate(-1.4deg) scale(0.97, 1.04);
+    opacity: 0.82;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1, 1);
+    opacity: 0.88;
+  }
+}
+
+@keyframes aurora-ribbon-secondary {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1, 1);
+    opacity: 0.76;
+  }
+  40% {
+    transform: translate3d(32px, -20px, 0) rotate(-2deg) scale(1.04, 1.03);
+    opacity: 0.96;
+  }
+  75% {
+    transform: translate3d(-18px, 16px, 0) rotate(1.2deg) scale(0.96, 0.98);
+    opacity: 0.72;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1, 1);
+    opacity: 0.76;
+  }
+}
+
+@keyframes aurora-ribbon-lower-left {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: translate3d(20px, -16px, 0) rotate(1.5deg) scale(1.06, 0.95);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+    opacity: 0.75;
+  }
+}
+
+@keyframes aurora-backlight-pulse {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translate3d(-12px, 8px, 0) scale(1.08);
+    opacity: 0.88;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.65;
+  }
+}
+
+@keyframes aurora-transition-drift {
+  0% {
+    transform: translate3d(-2%, 0, 0) scaleY(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translate3d(2.5%, -8px, 0) scaleY(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-2%, 0, 0) scaleY(1);
+    opacity: 0.8;
+  }
+}
+
+@keyframes aurora-fragment-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate3d(14px, -12px, 0) scale(1.05);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.6;
+  }
+}
+
+.aurora-animate-upper {
+  animation: aurora-ribbon-upper 36s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.aurora-animate-secondary {
+  animation: aurora-ribbon-secondary 42s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.aurora-animate-left {
+  animation: aurora-ribbon-lower-left 32s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.aurora-animate-backlight {
+  animation: aurora-backlight-pulse 28s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.aurora-animate-transition {
+  animation: aurora-transition-drift 38s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.aurora-animate-fragment {
+  animation: aurora-fragment-drift 34s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-animate-upper,
+  .aurora-animate-secondary,
+  .aurora-animate-left,
+  .aurora-animate-backlight,
+  .aurora-animate-transition,
+  .aurora-animate-fragment {
+    animation: none !important;
+  }
 }

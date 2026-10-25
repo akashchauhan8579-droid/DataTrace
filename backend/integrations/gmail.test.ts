@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   createSignedState,
   verifySignedState,
@@ -9,6 +9,11 @@ import {
 import { encryptToken, decryptToken } from './tokenVault';
 import { computeSha256, parseEmail } from '../ingestion';
 import { assertCaseOwner } from '../../database/security/assertCaseOwner';
+
+beforeEach(() => {
+  vi.stubEnv('GMAIL_STATE_SECRET', Buffer.alloc(32, 1).toString('base64'));
+  vi.stubEnv('GMAIL_TOKEN_ENC_KEY', Buffer.alloc(32, 2).toString('base64'));
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -44,9 +49,19 @@ describe('P1-0 One-Shot Gmail Import & Token Vault (Spec §10.6, §15.9, T24–T
     });
 
     it('rejects state if timestamp is expired (> 10 minutes)', () => {
-      const pastTime = Date.now() - 11 * 60 * 1000;
+      const pastTime = Date.now() - 10 * 60 * 1000;
       const state = createSignedState(testUserId, pastTime);
       expect(verifySignedState(state, testUserId)).toBe(false);
+    });
+
+    it('sets an explicit expiry exactly 10 minutes after issuance', () => {
+      const issuedAt = Date.now();
+      const state = createSignedState(testUserId, issuedAt);
+      const [payload] = state.split('.');
+      const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+
+      expect(parsed.expiresAt - parsed.issuedAt).toBe(10 * 60 * 1000);
+      expect(verifySignedState(state, testUserId)).toBe(true);
     });
 
     it('includes a high-entropy nonce and rejects future-dated state', () => {
@@ -56,6 +71,17 @@ describe('P1-0 One-Shot Gmail Import & Token Vault (Spec §10.6, §15.9, T24–T
       expect(parsed.userId).toBe(testUserId);
       expect(parsed.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(verifySignedState(createSignedState(testUserId, Date.now() + 1000), testUserId)).toBe(false);
+    });
+
+    it('requires a valid state signing secret and fails verification closed', () => {
+      const state = createSignedState(testUserId);
+      vi.stubEnv('GMAIL_STATE_SECRET', '');
+
+      expect(() => createSignedState(testUserId)).toThrow(/GMAIL_STATE_SECRET is required/);
+      expect(verifySignedState(state, testUserId)).toBe(false);
+
+      vi.stubEnv('GMAIL_STATE_SECRET', 'too-short');
+      expect(() => createSignedState(testUserId)).toThrow(/at least 32 bytes/);
     });
 
     it('rejects malformed state structures', () => {
@@ -102,6 +128,17 @@ describe('P1-0 One-Shot Gmail Import & Token Vault (Spec §10.6, §15.9, T24–T
     it('fails closed on malformed encrypted payload strings', () => {
       expect(() => decryptToken('malformed_token_without_colons')).toThrow('Malformed encrypted token payload');
       expect(() => decryptToken('only:two_parts')).toThrow('Malformed encrypted token payload');
+    });
+
+    it('requires a canonical base64 key containing exactly 32 bytes', () => {
+      vi.stubEnv('GMAIL_TOKEN_ENC_KEY', '');
+      expect(() => encryptToken(rawRefreshToken)).toThrow(/GMAIL_TOKEN_ENC_KEY is required/);
+
+      vi.stubEnv('GMAIL_TOKEN_ENC_KEY', Buffer.alloc(31, 2).toString('base64'));
+      expect(() => encryptToken(rawRefreshToken)).toThrow(/exactly 32 bytes/);
+
+      vi.stubEnv('GMAIL_TOKEN_ENC_KEY', 'not-base64!');
+      expect(() => encryptToken(rawRefreshToken)).toThrow(/exactly 32 bytes/);
     });
   });
 

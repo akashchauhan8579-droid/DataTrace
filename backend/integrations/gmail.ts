@@ -3,24 +3,26 @@ import * as path from 'node:path';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { GmailThreadList } from '../../contracts/schemas/gmail';
 import { GmailIdSchema } from '../../contracts/schemas/gmail';
+import { readBase64Secret } from './secretConfig';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'mock-google-client-id';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'mock-google-client-secret';
 const GOOGLE_REDIRECT_URI =
   process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/gmail/callback';
-const STATE_SECRET =
-  process.env.GMAIL_STATE_SECRET || 'datatrace-synthetic-hmac-state-secret-32b';
-
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 export function createSignedState(userId: string, customTimestamp?: number): string {
+  const issuedAt = customTimestamp ?? Date.now();
   const payload = Buffer.from(JSON.stringify({
     userId,
-    issuedAt: customTimestamp ?? Date.now(),
     nonce: randomBytes(32).toString('base64url'),
+    issuedAt,
+    expiresAt: issuedAt + OAUTH_STATE_TTL_MS,
   })).toString('base64url');
-  const signature = createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
+  const signature = createHmac('sha256', readBase64Secret('GMAIL_STATE_SECRET'))
+    .update(payload)
+    .digest('hex');
   return `${payload}.${signature}`;
 }
 
@@ -30,25 +32,32 @@ export function verifySignedState(state: string, expectedUserId: string): boolea
     if (parts.length !== 2) return false;
     const [payload, receivedSig] = parts;
     if (!/^[a-f0-9]{64}$/.test(receivedSig)) return false;
-    const expectedSig = createHmac('sha256', STATE_SECRET).update(payload).digest();
+    const expectedSig = createHmac('sha256', readBase64Secret('GMAIL_STATE_SECRET'))
+      .update(payload)
+      .digest();
     const suppliedSig = Buffer.from(receivedSig, 'hex');
     if (!timingSafeEqual(expectedSig, suppliedSig)) return false;
 
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
       userId?: unknown;
       issuedAt?: unknown;
+      expiresAt?: unknown;
       nonce?: unknown;
     };
     if (
       decoded.userId !== expectedUserId ||
       typeof decoded.issuedAt !== 'number' ||
       !Number.isSafeInteger(decoded.issuedAt) ||
+      typeof decoded.expiresAt !== 'number' ||
+      !Number.isSafeInteger(decoded.expiresAt) ||
       typeof decoded.nonce !== 'string' ||
       !/^[A-Za-z0-9_-]{43}$/.test(decoded.nonce)
     ) return false;
 
-    const age = Date.now() - decoded.issuedAt;
-    return age >= 0 && age <= OAUTH_STATE_TTL_MS;
+    const now = Date.now();
+    return decoded.issuedAt <= now &&
+      decoded.expiresAt > now &&
+      decoded.expiresAt - decoded.issuedAt === OAUTH_STATE_TTL_MS;
   } catch {
     return false;
   }
