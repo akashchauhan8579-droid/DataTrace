@@ -92,7 +92,7 @@ export const evidenceRoutes: RouteDef[] = [
       if (input.sourceType === 'EMAIL' || input.mimeType === 'message/rfc822' || input.filename.endsWith('.eml')) {
         ingestion = await parseEmail(rawBuffer);
       } else if (input.mimeType === 'application/pdf' || input.filename.endsWith('.pdf')) {
-        const { parsePdf } = await import('../../ingestion/pdf');\r\n        const { parsePdf } = await import('../../ingestion/pdf');
+        const { parsePdf } = await import('../../ingestion/pdf');
         ingestion = await parsePdf(rawBuffer);
       } else {
         ingestion = parsePlainText(rawBuffer, input.sourceType, input.mimeType);
