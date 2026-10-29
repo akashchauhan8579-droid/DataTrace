@@ -44,6 +44,8 @@ export default function EvidenceUploadPage() {
   const [gmailSearch, setGmailSearch] = useState('privacy OR deletion OR erasure OR GDPR');
   const [gmailThreads, setGmailThreads] = useState<GmailThreadSummary[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(false);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [importingThreadId, setImportingThreadId] = useState<string | null>(null);
   const [gmailImportResult, setGmailImportResult] = useState<{
     items: Array<{ id: string; displayId: string; sha256: string; duplicate: boolean }>;
@@ -112,13 +114,34 @@ export default function EvidenceUploadPage() {
   async function searchThreads(q: string) {
     setLoadingThreads(true);
     setError(null);
+    setNextPageToken(null);
     try {
       const res = await api.gmail.listThreads(q);
       setGmailThreads(res.threads || []);
+      setNextPageToken(res.nextPageToken || null);
     } catch (err: any) {
       setError(err.message || 'Failed to list Gmail threads');
     } finally {
       setLoadingThreads(false);
+    }
+  }
+
+  async function loadMoreThreads() {
+    if (!nextPageToken || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const res = await api.gmail.listThreads(gmailSearch, nextPageToken);
+      setGmailThreads((prev) => {
+        const existingIds = new Set(prev.map((t) => t.threadId));
+        const newUnique = (res.threads || []).filter((t) => !existingIds.has(t.threadId));
+        return [...prev, ...newUnique];
+      });
+      setNextPageToken(res.nextPageToken || null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load more threads');
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -596,6 +619,30 @@ export default function EvidenceUploadPage() {
                       </button>
                     </div>
                   ))}
+
+                  {/* Cursor Pagination: Load More */}
+                  {nextPageToken && (
+                    <div className="pt-3 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={loadMoreThreads}
+                        disabled={loadingMore}
+                        className="px-4 py-2 bg-paper border border-hairline hover:border-ink/40 text-ink font-mono text-xs uppercase tracking-wider rounded-sm transition-colors flex items-center gap-2 disabled:opacity-50 shadow-xs"
+                      >
+                        {loadingMore ? (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-amber animate-ping inline-block" />
+                            <span>Fetching Next Batch...</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>↓ Load More Threads</span>
+                            <span className="text-[10px] text-muted-ink font-mono">(+10 from mailbox)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
