@@ -183,6 +183,10 @@ function minimizeText(
     })
     .join('\n');
 
+  // Strip large base64 data blobs to prevent HTTP 413 token blowup
+  result = result.replace(/data:[^;]+;base64,[A-Za-z0-9+/=]{60,}/g, '[REDACTED_IMAGE_DATA]');
+  result = result.replace(/\b[A-Za-z0-9+/=]{250,}\b/g, '[REDACTED_BINARY_BLOB]');
+
   result = result.replace(/\bAuthorization\s*:\s*[^\r\n]*/gi, () => {
     state.counters.secretsStripped += 1;
     return 'Authorization: [REDACTED_SECRET]';

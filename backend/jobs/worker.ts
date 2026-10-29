@@ -468,6 +468,57 @@ export class AnalysisWorker {
     }
   }
 
+
+  /**
+   * Process all queued tasks for a run immediately in parallel.
+   * Enables serverless/Vercel environments to complete analysis synchronously
+   * without needing a standalone background worker daemon.
+   */
+  public async processRunInline(runId: string): Promise<{ success: boolean; tasksProcessed: number }> {
+    const { data: tasks, error } = await this.admin
+      .from('analysis_tasks')
+      .select('*')
+      .eq('run_id', runId)
+      .eq('status', 'QUEUED');
+
+    if (error || !tasks || tasks.length === 0) {
+      return { success: false, tasksProcessed: 0 };
+    }
+
+    const claimToken = randomUUID();
+    const taskIds = tasks.map((t: { id: string }) => t.id);
+
+    const { error: claimError } = await this.admin
+      .from('analysis_tasks')
+      .update({
+        status: 'RUNNING',
+        claim_token: claimToken,
+        claimed_at: new Date().toISOString(),
+      })
+      .in('id', taskIds);
+
+    if (claimError) {
+      throw new Error(`Failed to claim tasks inline: ${claimError.message}`);
+    }
+
+    // Process tasks concurrently across the multi-key Groq pool
+    await Promise.all(
+      tasks.map(async (task: any) => {
+        const queuedTask: QueuedTask = { ...task, claim_token: claimToken };
+        try {
+          await this.processTask(queuedTask);
+        } catch (err: unknown) {
+          const reason = errorMessage(err);
+          console.error(`[WorkerInline] Task ${task.id} failed:`, reason);
+          await this.failTask(queuedTask, reason);
+        }
+      })
+    );
+
+    await this.finalizeRun(runId);
+    return { success: true, tasksProcessed: tasks.length };
+  }
+
   private async finalizeRun(runId: string): Promise<void> {
     const { error } = await this.admin.rpc('finalize_analysis_run', { p_run_id: runId });
     if (error) {

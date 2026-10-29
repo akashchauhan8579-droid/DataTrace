@@ -3,7 +3,6 @@ import type { RouteDef } from '../types';
 import {
   computeSha256,
   parseEmail,
-  parsePdf,
   parsePlainText,
   buildEvidencePath,
   type IngestionResult,
