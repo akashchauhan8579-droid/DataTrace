@@ -11,7 +11,7 @@
     justify-content: center;
     align-items: center;
     background: #EFEBE2;
-    overflow: hidden;
+    overflow-x: clip;
     position: relative;
     padding: 24px;
 }
@@ -55,6 +55,7 @@
     justify-content: center;
     align-items: center;
     width: 100%;
+    overflow: visible;
 }
 
 /* =========================
@@ -62,9 +63,52 @@
 ========================= */
 
 .flip-scene {
+    position: relative;
     width: 530px;
     height: 530px;
     perspective: 1800px;
+    overflow: visible;
+}
+
+/* Aurora glow halo using exact landing page mint/teal colors */
+.flip-scene::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 140%;
+    height: 140%;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(
+        circle at 50% 50%,
+        rgba(0, 166, 166, 0.44) 0%,
+        rgba(0, 166, 166, 0.28) 35%,
+        rgba(0, 115, 115, 0.14) 55%,
+        rgba(0, 166, 166, 0.03) 72%,
+        transparent 85%
+    );
+    filter: blur(75px);
+    pointer-events: none;
+    z-index: -1;
+    animation: aurora-halo-pulse 9s ease-in-out infinite;
+}
+
+@keyframes aurora-halo-pulse {
+    0%, 100% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0.75;
+    }
+    50% {
+        transform: translate(-50%, -50%) scale(1.05);
+        opacity: 0.95;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .flip-scene::before {
+        animation: none;
+    }
 }
 
 .flip-card {
