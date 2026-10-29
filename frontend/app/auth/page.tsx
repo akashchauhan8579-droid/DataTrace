@@ -121,7 +121,7 @@ export default function AuthPage() {
   return (
     <div className="login-page-container">
       {/* Brand logo top-left */}
-      <Link href="/cases" className="brand-badge">
+      <Link href="/" className="brand-badge">
         <span className="brand-logo" />
         <span className="brand-text">DATATRACE</span>
       </Link>
