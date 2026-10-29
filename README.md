@@ -4,7 +4,7 @@
 
 DataTrace turns fragmented privacy-related evidence (emails, documents, screenshots, requests, responses) into a preserved case record, structured intelligence, deterministically verified findings and an evidence-grounded action report.
 
-> **Status: partial implementation (24 Oct 2026).** [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) (**v1.4.2**) remains the target design. This checkout contains working contracts, AI gateway and providers, ingestion, backend API and worker code, and six P0 verification rule modules. The frontend UI, Gmail import, and automated database/pgTAP suite are not implemented. The checks currently passing are `npm test` (31 files, 362 tests) and `npm run typecheck`; this is not yet a complete end-to-end release.
+> **Status: live end-to-end (29 Oct 2026).** The full user-facing workflow is deployed at **https://data-trace-kappa.vercel.app**. [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) (**v1.4.2**) remains the target design. The frontend UI (Next.js 14), Gmail import, AI analysis (Groq multi-key pool), evidence safe-sizing, inline parallel task execution, and all six P0 verification rule modules are implemented and live. The checks currently passing are `npm test` (31 files, 362 tests) and `npm run typecheck`. Remaining partial features: Gmail OAuth production approval, screenshot OCR, and PDF export.
 
 > *DataTrace identifies evidence-related gaps and prepares a reviewable draft; it does not determine legal compliance or provide legal advice.*
 
@@ -42,13 +42,13 @@ Two ideas carry the design:
 | Area | Current implementation |
 |---|---|
 | Contracts | TypeScript/Zod schemas for findings, citations, payloads, locators and reports, with unit tests. |
-| AI | Consent and minimization gateway, candidate citation resolver, mock provider, Grok and Groq provider adapters, and prompt registry. Live provider credentials are not part of the test run. |
-| Ingestion and backend | SHA-256, `.eml` and PDF parsing, segmentation, API router/adapter, evidence and report routes, and an analysis worker. |
+| AI | Consent and minimization gateway, candidate citation resolver, mock provider, Grok and Groq provider adapters, and prompt registry. **Multi-key Groq pool** (`GROQ_API_KEYS`) with round-robin distribution and HTTP 429 auto-failover. **Safe-sizing minimizer** strips base64/binary blobs; hard 2,500-char per-segment and 16,000-char per-evidence caps prevent HTTP 413 errors. |
+| Ingestion and backend | SHA-256, `.eml` and PDF parsing, segmentation, API router/adapter, evidence and report routes, and an analysis worker. **Inline parallel execution** (`processRunInline`) runs all queued tasks via `Promise.all` inside the API route — no external worker needed on Vercel serverless. |
 | Verification | Six P0 rule modules and a deterministic verification engine. |
 | Database | Six SQL migrations are present. No pgTAP tests are currently checked in, so database security and migration acceptance gates remain unverified. |
-| Frontend and Gmail | UI pages/components and Gmail import are not implemented; only the API adapter and placeholder directories exist. |
+| Frontend and Gmail | Full Next.js 14 UI deployed and live. Gmail OAuth integration present but in Google Cloud Testing mode (only registered test users can sync). |
 
-The backend and unit/synthetic tests are implemented, but the user-facing workflow is not yet complete. Do not present the full target workflow below as a shipped product.
+The full end-to-end workflow is live and operational at https://data-trace-kappa.vercel.app. Remaining partial features: Gmail OAuth production approval, screenshot OCR pipeline, and 1-click PDF export.
 
 ## Evidence sources
 
@@ -56,7 +56,7 @@ The backend and unit/synthetic tests are implemented, but the user-facing workfl
 |---|---|---|
 | `.eml`, `.txt`, text-based PDF | P0 | Parsers and segmentation are implemented and covered by tests. |
 | Manual log | P0 | Specified; no completed UI workflow. |
-| Gmail import | P1-0 | Not implemented. Do not connect an inbox or claim this feature. |
+| Gmail import | P1-0 | Implemented (OAuth flow complete). Runs in Google Cloud Testing mode; production approval pending. |
 | `.docx`, screenshots | P1 | Not implemented. |
 | Continuous Gmail sync, HTTP probes, DPDP pack | P2 | Not implemented/planned beyond the master spec. |
 
@@ -64,7 +64,7 @@ The backend and unit/synthetic tests are implemented, but the user-facing workfl
 
 | Tier | Contents | Status |
 |---|---|---|
-| **P0-Core** | Contracts, gateway, providers, ingestion, backend API/worker and six P0 rule modules are present. The frontend, complete end-to-end workflow, and acceptance gates are incomplete. | Partially implemented |
+| **P0-Core** | Contracts, gateway, providers, ingestion, backend API/worker and six P0 rule modules. Full Next.js 14 frontend UI live. Multi-key Groq pool, safe-sizing, and inline parallel execution deployed. | **Complete & Live** |
 | **P0-Hardening** | SQL migrations include audit/invariant work, but there is no pgTAP suite and the database gates have not been validated in this checkout. | Partially implemented; unverified |
 | **P1-0** | Gmail import (Â§5.5 of the spec) | Not implemented |
 | **P1-A** | Timeline, graph, friction signals, remaining P1 rules, exact-range highlighting, DOCX, screenshots and PDF export | Not implemented |
@@ -126,9 +126,7 @@ npm test
 npm run typecheck
 ```
 
-Latest local result: **31 test files and 362 tests passed; typecheck passed**. The test suite uses synthetic/mock data. No pgTAP, browser/component, live-provider, or full database-backed end-to-end run has been verified. `npm run worker` is available but requires the backend environment and database configuration; there is no `npm run dev` UI script in this checkout.
-
-The full spec's database-backed quickstart, demo mode and Gmail setup are not currently runnable from this checkout because their required UI/database/Gmail implementation is incomplete.
+Latest local result: **31 test files and 362 tests passed; typecheck passed**. The test suite uses synthetic/mock data. No pgTAP or browser/component tests are checked in. The live end-to-end workflow is verified on the production deployment at https://data-trace-kappa.vercel.app.
 
 ## Testing
 
