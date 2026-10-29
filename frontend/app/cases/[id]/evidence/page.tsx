@@ -38,7 +38,16 @@ export default function EvidenceUploadPage() {
   const caseId = params.id as string;
   const queryClient = useQueryClient();
 
-  const [mode, setMode] = useState<'FILE' | 'MANUAL' | 'GMAIL'>('FILE');
+  const [mode, setMode] = useState<'FILE' | 'MANUAL' | 'GMAIL' | 'OCR'>('FILE');
+
+  // Screenshot OCR state
+  const [ocrImage, setOcrImage] = useState<File | null>(null);
+  const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrStatusText, setOcrStatusText] = useState('');
+  const [ocrRunning, setOcrRunning] = useState(false);
+  const [ocrExtractedText, setOcrExtractedText] = useState('');
+  const [ocrSourceTitle, setOcrSourceTitle] = useState('Portal Rejection Screenshot');
   const [sourceType, setSourceType] = useState<SourceType>('EMAIL');
 
   // File upload state
@@ -254,6 +263,88 @@ export default function EvidenceUploadPage() {
     }
   };
 
+  const handleImageSelect = (selectedFile: File) => {
+    setOcrImage(selectedFile);
+    setOcrPreviewUrl(URL.createObjectURL(selectedFile));
+    setOcrExtractedText('');
+    setOcrProgress(0);
+    setOcrStatusText('');
+  };
+
+  const handleRunOcr = async () => {
+    if (!ocrImage) return;
+    setOcrRunning(true);
+    setError(null);
+    setOcrProgress(0);
+    setOcrStatusText('Initializing OCR engine...');
+
+    try {
+      const { recognize } = await import('tesseract.js');
+      const res = await recognize(ocrImage, 'eng', {
+        logger: (m: any) => {
+          if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+            setOcrProgress(Math.round(m.progress * 100));
+            setOcrStatusText(`Recognizing text... ${Math.round(m.progress * 100)}%`);
+          } else if (typeof m.status === 'string') {
+            setOcrStatusText(m.status);
+          }
+        },
+      });
+
+      const cleaned = res.data?.text?.trim() || '';
+      if (!cleaned) {
+        setError('No legible text could be extracted from this image. Please ensure the screenshot has clear contrast and text.');
+      } else {
+        setOcrExtractedText(cleaned);
+        setOcrStatusText('Extraction complete! Please review and verify text below before preserving.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'OCR extraction failed');
+    } finally {
+      setOcrRunning(false);
+    }
+  };
+
+  const handleOcrSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ocrExtractedText.trim()) return;
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const sanitizedTitle = ocrSourceTitle.trim().replace(/\s+/g, '_') || 'Screenshot';
+      const filename = `${sanitizedTitle}_${Date.now()}.txt`;
+
+      const res = await api.evidence.upload(caseId, {
+        sourceType: 'SCREENSHOT',
+        filename,
+        mimeType: 'text/plain',
+        content: ocrExtractedText,
+        isBase64: false,
+      });
+
+      setResult({
+        displayId: res.displayId,
+        sha256: res.sha256,
+        segmentCount: res.segmentCount,
+      });
+
+      // Clear OCR state
+      setOcrImage(null);
+      setOcrPreviewUrl(null);
+      setOcrExtractedText('');
+      setOcrProgress(0);
+      setOcrStatusText('');
+      await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
+    } catch (err: any) {
+      setError(err.message || 'Failed to preserve screenshot evidence');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleManualUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualTitle.trim() || !manualContent.trim()) return;
@@ -366,6 +457,19 @@ export default function EvidenceUploadPage() {
             <span>Import from Gmail</span>
             <span className="text-[10px] px-1.5 py-0.2 bg-paper-2 border border-hairline rounded text-muted-ink">
               §10.6
+            </span>
+          </button>
+          <button
+            onClick={() => setMode('OCR')}
+            className={`px-4 py-2 border-b-2 font-medium transition-colors flex items-center gap-1.5 ${
+              mode === 'OCR'
+                ? 'border-copper text-copper font-semibold'
+                : 'border-transparent text-muted-ink hover:text-ink'
+            }`}
+          >
+            <span>Screenshot OCR</span>
+            <span className="text-[10px] px-1.5 py-0.2 bg-amber/20 text-amber border border-amber/30 rounded font-semibold font-mono">
+              NEW
             </span>
           </button>
         </div>
@@ -801,6 +905,189 @@ export default function EvidenceUploadPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Mode 4: Screenshot OCR */}
+        {mode === 'OCR' && (
+          <div className="space-y-6">
+            <div className="border border-hairline bg-paper-2 p-6 rounded-sm space-y-4">
+              <div className="border-b border-hairline pb-3">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-copper font-semibold">
+                  Multi-Modal Ingestion • Client-Side Neural OCR
+                </span>
+                <h3 className="text-xl font-serif text-ink mt-0.5">
+                  Screenshot & Image OCR Extraction
+                </h3>
+                <p className="text-xs font-sans text-muted-ink mt-1">
+                  Upload screenshots of privacy portal rejections, email snips, WhatsApp/chat logs, or compliance responses. Text is extracted locally using Tesseract OCR for human verification prior to cryptographic preservation.
+                </p>
+              </div>
+
+              {/* Forensic Transparency Notice */}
+              <div className="p-3 bg-amber-500/10 border border-amber/30 rounded-sm text-xs font-mono text-amber-900 flex items-start gap-2">
+                <span className="text-amber text-sm leading-none">⚠️</span>
+                <div className="leading-relaxed">
+                  <strong>Forensic Transparency Rule:</strong> OCR extracts textual content from image pixels; it does not establish cryptographic pixel authenticity. The record is tagged as <code className="bg-amber/20 px-1 py-0.5 rounded text-ink font-semibold">sourceType: SCREENSHOT</code> and preserved as human-verified evidence.
+                </div>
+              </div>
+
+              {/* Step 1: Upload Image */}
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files?.[0]) {
+                    handleImageSelect(e.dataTransfer.files[0]);
+                  }
+                }}
+                className="border-2 border-dashed border-hairline p-6 text-center rounded-sm bg-paper hover:bg-paper-2 transition-colors cursor-pointer"
+              >
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) {
+                      handleImageSelect(e.target.files[0]);
+                    }
+                  }}
+                  className="block w-full text-xs font-mono text-muted-ink file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-xs file:font-mono file:bg-ink file:text-paper hover:file:bg-neutral-800 cursor-pointer"
+                />
+                <p className="text-[11px] font-sans text-muted-ink mt-2">
+                  Drop PNG, JPEG, or WebP screenshot here. Recommended: Clear contrast with readable text.
+                </p>
+              </div>
+
+              {/* Image Preview & OCR Trigger */}
+              {ocrImage && (
+                <div className="p-4 bg-paper border border-hairline rounded-sm space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="text-xs font-mono text-ink">
+                      Selected: <strong>{ocrImage.name}</strong> ({(ocrImage.size / 1024).toFixed(1)} KB)
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOcrImage(null);
+                        setOcrPreviewUrl(null);
+                        setOcrExtractedText('');
+                        setOcrProgress(0);
+                        setOcrStatusText('');
+                      }}
+                      className="text-[11px] font-mono text-muted-ink hover:text-red-700 underline"
+                    >
+                      Clear Image
+                    </button>
+                  </div>
+
+                  {ocrPreviewUrl && (
+                    <div className="max-h-60 overflow-hidden border border-hairline rounded bg-neutral-900/5 flex items-center justify-center p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={ocrPreviewUrl}
+                        alt="Screenshot Preview"
+                        className="max-h-56 max-w-full object-contain rounded shadow-xs"
+                      />
+                    </div>
+                  )}
+
+                  {/* OCR Progress or Trigger Button */}
+                  {!ocrExtractedText && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleRunOcr}
+                        disabled={ocrRunning}
+                        className="bg-copper text-paper px-6 py-2.5 text-xs font-mono uppercase tracking-wider font-semibold rounded-sm hover:bg-umber transition-colors disabled:opacity-50 shadow-xs flex items-center gap-2"
+                      >
+                        {ocrRunning ? (
+                          <>
+                            <span className="w-2 h-2 rounded-full bg-amber animate-ping inline-block" />
+                            <span>{ocrStatusText || 'Extracting Text...'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>🔍 Run Tesseract OCR</span>
+                          </>
+                        )}
+                      </button>
+
+                      {ocrRunning && (
+                        <div className="mt-3 space-y-1">
+                          <div className="w-full bg-paper-2 border border-hairline h-2 rounded-full overflow-hidden">
+                            <div
+                              className="bg-copper h-full transition-all duration-300"
+                              style={{ width: `${ocrProgress}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] font-mono text-muted-ink text-right">
+                            {ocrProgress}% complete
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 2: Human Verification & Review Form */}
+              {ocrExtractedText && (
+                <form onSubmit={handleOcrSubmit} className="space-y-4 pt-2 border-t border-hairline">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-semibold uppercase tracking-wider text-green-800 flex items-center gap-1.5">
+                      <span>✓</span> Text Extracted • Human Verification Required
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRunOcr}
+                      disabled={ocrRunning}
+                      className="text-[10px] font-mono text-muted-ink hover:text-ink underline"
+                    >
+                      Re-run OCR
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono uppercase tracking-wider text-muted-ink mb-1">
+                      Evidence Source Label
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={ocrSourceTitle}
+                      onChange={(e) => setOcrSourceTitle(e.target.value)}
+                      placeholder="e.g. Meta Portal Data Deletion Rejection"
+                      className="w-full bg-paper border border-hairline px-3 py-2 text-xs font-mono rounded-sm focus:outline-none focus:border-amber"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono uppercase tracking-wider text-muted-ink mb-1">
+                      Review & Correct Extracted Text (Editable)
+                    </label>
+                    <textarea
+                      required
+                      rows={8}
+                      value={ocrExtractedText}
+                      onChange={(e) => setOcrExtractedText(e.target.value)}
+                      placeholder="Extracted OCR text will appear here for verification..."
+                      className="w-full bg-paper border border-hairline px-3 py-2 text-sm font-sans rounded-sm focus:outline-none focus:border-amber font-mono leading-relaxed"
+                    />
+                    <p className="text-[10px] font-mono text-muted-ink mt-1">
+                      Tip: You can correct any OCR character misreads before the text is permanently signed and ingested.
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading || !ocrExtractedText.trim()}
+                    className="bg-ink text-paper px-6 py-2.5 text-xs font-mono uppercase tracking-wider font-semibold rounded-sm hover:bg-neutral-800 transition-colors disabled:opacity-50 shadow-xs flex items-center gap-2"
+                  >
+                    <span>{loading ? 'Preserving Evidence...' : '✓ Confirm & Preserve Evidence (SHA-256)'}</span>
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         )}
       </div>
