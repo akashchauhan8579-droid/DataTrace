@@ -1,137 +1,288 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '../../lib/supabase';
-import { DisclaimerFooter } from '../../components/DisclaimerFooter';
 import Link from 'next/link';
+import { createClient } from '../../lib/supabase';
+import './auth.css';
+
+function UserIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+      <polyline points="22,6 12,13 2,6" />
+    </svg>
+  );
+}
 
 export default function AuthPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+
+  // Sign up form state
+  const [signupName, setSignupName] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+
+  // Status feedback
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setStatusMessage(null);
     setErrorMessage(null);
+    setStatusMessage(null);
 
     const supabase = createClient();
-
     try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
-        setStatusMessage('Account created! You can now sign in or check your email confirmation.');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-        window.location.href = '/cases';
-      }
+      const { error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+
+      if (error) throw error;
+      window.location.href = '/cases';
     } catch (err: any) {
-      setErrorMessage(err.message || 'Authentication error');
+      setErrorMessage(err.message || 'Authentication error. Please check your credentials.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
+
+    const supabase = createClient();
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: signupEmail.trim(),
+        password: signupPassword,
+        options: {
+          data: {
+            full_name: signupName.trim(),
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      if (data.session) {
+        window.location.href = '/cases';
+      } else {
+        setStatusMessage('Account created! Please check your email or sign in below.');
+        setIsFlipped(false);
+        setLoginEmail(signupEmail);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to create account.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const switchToSignup = () => {
+    setErrorMessage(null);
+    setStatusMessage(null);
+    setIsFlipped(true);
+  };
+
+  const switchToLogin = () => {
+    setErrorMessage(null);
+    setStatusMessage(null);
+    setIsFlipped(false);
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-paper text-ink">
-      <header className="border-b border-hairline px-6 py-4 flex items-center justify-between">
-        <Link href="/cases" className="text-sm font-semibold tracking-[0.18em] uppercase font-mono">
-          DATATRACE
-        </Link>
-      </header>
+    <div className="login-page-container">
+      {/* Brand logo top-left */}
+      <Link href="/cases" className="brand-badge">
+        <span className="brand-logo" />
+        <span className="brand-text">DATATRACE</span>
+      </Link>
 
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-paper-2 border border-hairline p-8 rounded-sm shadow-sm">
-          <div className="mb-6">
-            <span className="text-[11px] uppercase tracking-[0.12em] font-mono text-muted-ink">Authentication</span>
-            <h1 className="text-2xl font-serif mt-1 font-normal text-ink">
-              {isSignUp ? 'Create your account' : 'Sign in to DataTrace'}
-            </h1>
-            <p className="text-xs font-sans text-muted-ink mt-2">
-              Browser-side authentication only. Data remains strictly scoped to your case boundary.
-            </p>
-          </div>
+      <div className="login-wrapper">
+        <div className={`flip-scene ${isFlipped ? 'flipped' : ''}`} id="flipScene">
+          <div className="flip-card">
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-mono uppercase tracking-wider text-muted-ink mb-1">
-                Email address
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-paper border border-hairline px-3 py-2 text-sm font-sans rounded-sm focus:outline-none focus:border-amber"
-                placeholder="name@organization.com"
-              />
+            {/* FRONT FACE — LOGIN */}
+            <div className="glass-circle front">
+              <form onSubmit={handleLogin} className="login-form">
+                <h1>Login</h1>
+                <div className="subtitle">Sign in to your account</div>
+
+                {errorMessage && !isFlipped && (
+                  <div className="auth-alert error">{errorMessage}</div>
+                )}
+                {statusMessage && !isFlipped && (
+                  <div className="auth-alert success">{statusMessage}</div>
+                )}
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    <UserIcon />
+                  </span>
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    required
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    <LockIcon />
+                  </span>
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                </div>
+
+                <div className="forgot">
+                  <div
+                    className="remember"
+                    onClick={() => setRememberMe((prev) => !prev)}
+                  >
+                    <div className={`switch ${rememberMe ? 'on' : ''}`} />
+                    <span>Remember me</span>
+                  </div>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setErrorMessage('Please contact your administrator or reset via Supabase auth.');
+                    }}
+                  >
+                    Forgot password?
+                  </a>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="action-btn"
+                >
+                  {loading ? 'Signing In…' : 'Sign In'}
+                </button>
+
+                <div className="signup-text">
+                  Don&apos;t have an account?{' '}
+                  <button type="button" onClick={switchToSignup} className="link-btn">
+                    Sign up
+                  </button>
+                </div>
+              </form>
             </div>
 
-            <div>
-              <label className="block text-xs font-mono uppercase tracking-wider text-muted-ink mb-1">
-                Password
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-paper border border-hairline px-3 py-2 text-sm font-sans rounded-sm focus:outline-none focus:border-amber"
-                placeholder="••••••••"
-              />
+            {/* BACK FACE — SIGN UP */}
+            <div className="glass-circle back">
+              <form onSubmit={handleSignUp} className="login-form">
+                <h1>Sign Up</h1>
+                <div className="subtitle">Create your account</div>
+
+                {errorMessage && isFlipped && (
+                  <div className="auth-alert error">{errorMessage}</div>
+                )}
+                {statusMessage && isFlipped && (
+                  <div className="auth-alert success">{statusMessage}</div>
+                )}
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    <UserIcon />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Full name"
+                    required
+                    value={signupName}
+                    onChange={(e) => setSignupName(e.target.value)}
+                    autoComplete="name"
+                  />
+                </div>
+
+                <div className="input-box">
+                  <span className="input-icon">
+                    <MailIcon />
+                  </span>
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    required
+                    value={signupEmail}
+                    onChange={(e) => setSignupEmail(e.target.value)}
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div className="input-box" style={{ marginBottom: '22px' }}>
+                  <span className="input-icon">
+                    <LockIcon />
+                  </span>
+                  <input
+                    type="password"
+                    placeholder="Password (min 6 characters)"
+                    required
+                    minLength={6}
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="action-btn"
+                >
+                  {loading ? 'Creating…' : 'Create Account'}
+                </button>
+
+                <div className="signup-text">
+                  Already have an account?{' '}
+                  <button type="button" onClick={switchToLogin} className="link-btn">
+                    Login
+                  </button>
+                </div>
+              </form>
             </div>
 
-            {statusMessage && (
-              <div className="p-3 bg-teal-50 border border-teal-200 text-teal-800 text-xs font-sans rounded-sm">
-                {statusMessage}
-              </div>
-            )}
-
-            {errorMessage && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-sans rounded-sm">
-                {errorMessage}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-ink text-paper py-2.5 px-4 text-xs font-mono uppercase tracking-wider rounded-sm hover:bg-neutral-800 transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Processing...' : isSignUp ? 'Sign Up' : 'Sign In'}
-            </button>
-          </form>
-
-          <div className="mt-6 pt-4 border-t border-hairline flex items-center justify-between text-xs font-sans text-muted-ink">
-            <span>{isSignUp ? 'Already have an account?' : "Don't have an account?"}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignUp(!isSignUp);
-                setStatusMessage(null);
-                setErrorMessage(null);
-              }}
-              className="text-copper hover:underline font-mono"
-            >
-              {isSignUp ? 'Sign In' : 'Sign Up'}
-            </button>
           </div>
         </div>
       </div>
-
-      <DisclaimerFooter />
     </div>
   );
 }

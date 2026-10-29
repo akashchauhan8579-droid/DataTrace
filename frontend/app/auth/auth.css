@@ -1,0 +1,473 @@
+/* =========================================================
+   DATATRACE NEUMORPHIC AUTH THEME
+   Warm Ivory Parchment (--paper: #EFEBE2) & Copper (--copper: #B5562F)
+========================================================= */
+
+.login-page-container {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: #EFEBE2;
+    overflow: hidden;
+    position: relative;
+    padding: 24px;
+}
+
+/* Brand header */
+.brand-badge {
+    position: absolute;
+    top: 28px;
+    left: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    z-index: 20;
+}
+
+.brand-badge .brand-logo {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #B5562F;
+    box-shadow: 0 0 10px rgba(181, 86, 47, 0.5);
+}
+
+.brand-badge .brand-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    color: #1B1814;
+    text-transform: uppercase;
+    transition: color .2s ease;
+}
+
+.brand-badge:hover .brand-text {
+    color: #B5562F;
+}
+
+.login-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+}
+
+/* =========================
+      FLIP PERSPECTIVE
+========================= */
+
+.flip-scene {
+    width: 530px;
+    height: 530px;
+    perspective: 1800px;
+}
+
+.flip-card {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform .85s cubic-bezier(.22, 1, .36, 1);
+    transform-style: preserve-3d;
+}
+
+.flip-scene.flipped .flip-card {
+    transform: rotateY(180deg);
+}
+
+/* =========================
+      NEUMORPHIC CIRCLE (WARM IVORY)
+========================= */
+
+.glass-circle {
+    position: absolute;
+    inset: 0;
+    width: 530px;
+    height: 530px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #EFEBE2;
+    box-shadow:
+        -20px -20px 45px #FFFFFF,
+        22px 22px 48px #D0C9BA,
+        -1px -1px 1px rgba(255, 255, 255, 0.6) inset;
+    z-index: 5;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.glass-circle.back {
+    transform: rotateY(180deg);
+}
+
+/* =========================
+       INNER METALLIC RING
+========================= */
+
+.glass-circle::before {
+    content: "";
+    position: absolute;
+    inset: 14px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    box-shadow:
+        inset 3px 3px 9px rgba(180, 172, 158, 0.22),
+        inset -3px -3px 9px rgba(255, 255, 255, 0.85);
+    pointer-events: none;
+}
+
+/* Subtle outer hairline boundary */
+.glass-circle::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(27, 24, 20, 0.05);
+    pointer-events: none;
+}
+
+/* =========================
+        LOGIN / SIGNUP FORM
+========================= */
+
+.login-form {
+    position: relative;
+    width: 300px;
+    z-index: 10;
+}
+
+/* =========================
+          TITLE
+========================= */
+
+.login-form h1 {
+    color: #1B1814;
+    font-family: 'Fraunces', serif;
+    font-size: 36px;
+    font-weight: 500;
+    letter-spacing: -0.5px;
+    margin-bottom: 2px;
+    text-align: center;
+    text-shadow:
+        1px 1px 1px rgba(255, 255, 255, 0.9),
+        -1px -1px 1px rgba(180, 172, 158, 0.2);
+}
+
+.login-form .subtitle {
+    text-align: center;
+    color: #6B645A;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.2px;
+    margin-bottom: 18px;
+}
+
+/* =========================
+        INPUT BOX
+========================= */
+
+.input-box {
+    position: relative;
+    margin-bottom: 14px;
+}
+
+/* =========================
+          ICON
+========================= */
+
+.input-box .input-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #8C8477;
+    z-index: 2;
+    transition: color .3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+/* =========================
+          INPUT
+========================= */
+
+.input-box input {
+    width: 100%;
+    height: 44px;
+    padding: 0 16px 0 44px;
+    border: none;
+    outline: none;
+    background: #EFEBE2;
+    color: #1B1814;
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+    border-radius: 12px;
+    box-shadow:
+        inset -5px -5px 10px rgba(255, 255, 255, 0.95),
+        inset 5px 5px 10px rgba(195, 187, 173, 0.5);
+    transition: box-shadow .35s cubic-bezier(.22, 1, .36, 1), transform .35s cubic-bezier(.22, 1, .36, 1);
+}
+
+.input-box input::placeholder {
+    color: #A39B8F;
+    font-weight: 400;
+}
+
+/* =========================
+       FOCUS (COPPER GLOW)
+========================= */
+
+.input-box input:focus {
+    transform: translateY(-1px);
+    box-shadow:
+        inset 3px 3px 7px rgba(181, 86, 47, 0.32),
+        inset -3px -3px 7px rgba(217, 138, 78, 0.22);
+}
+
+.input-box:focus-within .input-icon {
+    color: #B5562F;
+}
+
+/* =========================
+       FORGOT / REMEMBER
+========================= */
+
+.forgot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 2px;
+    margin-bottom: 20px;
+}
+
+.remember {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11.5px;
+    color: #6B645A;
+    user-select: none;
+    cursor: pointer;
+}
+
+/* tiny neumorphic toggle */
+.switch {
+    position: relative;
+    width: 32px;
+    height: 18px;
+    border-radius: 20px;
+    background: #EFEBE2;
+    box-shadow:
+        inset 3px 3px 6px rgba(195, 187, 173, 0.55),
+        inset -3px -3px 6px rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all .25s ease;
+}
+
+.switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #EFEBE2;
+    box-shadow: 1px 1px 3px rgba(27, 24, 20, 0.25);
+    transition: left .25s ease, background .25s ease;
+}
+
+.switch.on {
+    box-shadow:
+        inset 3px 3px 6px rgba(181, 86, 47, 0.35),
+        inset -3px -3px 6px rgba(217, 138, 78, 0.25);
+}
+
+.switch.on::after {
+    left: 16px;
+    background: #B5562F;
+}
+
+.forgot a {
+    font-family: 'Inter', sans-serif;
+    font-size: 11.5px;
+    color: #6B645A;
+    text-decoration: none;
+    transition: color .2s ease;
+}
+
+.forgot a:hover {
+    color: #B5562F;
+}
+
+/* =========================
+     BUTTON (COPPER HOVER)
+========================= */
+
+.login-form button.action-btn {
+    position: relative;
+    width: 300px;
+    height: 42px;
+    display: block;
+    margin: auto;
+    overflow: hidden;
+    border: none;
+    outline: none;
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #5A5349;
+    background: #EFEBE2;
+    box-shadow:
+        -6px -6px 12px #FFFFFF,
+         6px 6px 12px #D0C9BA;
+    transition: color .35s ease, background .35s ease, box-shadow .35s ease, transform .2s ease;
+}
+
+/* premium sheen sweep */
+.login-form button.action-btn::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -60%;
+    width: 40%;
+    height: 100%;
+    background: linear-gradient(115deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+    transform: skewX(-20deg);
+    transition: left .55s ease;
+}
+
+.login-form button.action-btn:hover::before {
+    left: 130%;
+}
+
+.login-form button.action-btn:hover {
+    transform: translateY(-2px);
+    color: #FDFBF7;
+    background: linear-gradient(155deg, #B5562F 0%, #6E3B2A 100%);
+    box-shadow:
+        0 10px 24px rgba(181, 86, 47, 0.35),
+        -4px -4px 12px rgba(255, 255, 255, 0.7),
+        inset 0 1px 1px rgba(255, 255, 255, 0.3);
+}
+
+.login-form button.action-btn:active {
+    transform: translateY(0) scale(0.97);
+    box-shadow:
+        inset 4px 4px 8px rgba(110, 59, 42, 0.5),
+        inset -4px -4px 8px rgba(217, 138, 78, 0.25);
+}
+
+.login-form button.action-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.login-form .signup-text {
+    text-align: center;
+    margin-top: 18px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: #8C8477;
+}
+
+.login-form .signup-text button.link-btn {
+    color: #B5562F;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    box-shadow: none;
+    text-transform: none;
+    display: inline;
+    letter-spacing: normal;
+    width: auto;
+    height: auto;
+    font-family: inherit;
+    transition: color .2s ease;
+}
+
+.login-form .signup-text button.link-btn:hover {
+    color: #6E3B2A;
+    text-decoration: underline;
+    background: none;
+    box-shadow: none;
+    transform: none;
+}
+
+/* =========================
+       FEEDBACK ALERTS
+========================= */
+
+.auth-alert {
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    margin-bottom: 12px;
+    text-align: center;
+    line-height: 1.35;
+}
+
+.auth-alert.error {
+    background: #FDF2F0;
+    color: #991B1B;
+    border: 1px solid #F87171;
+}
+
+.auth-alert.success {
+    background: #F0FDF4;
+    color: #166534;
+    border: 1px solid #86EFAC;
+}
+
+/* =========================
+        RESPONSIVE
+========================= */
+
+@media (max-width: 600px) {
+    .flip-scene { width: 400px; height: 400px; }
+    .glass-circle { width: 400px; height: 400px; }
+    .login-form { width: 230px; }
+    .login-form h1 { font-size: 30px; }
+    .login-form .subtitle { margin-bottom: 14px; font-size: 11px; }
+    .input-box { margin-bottom: 11px; }
+    .input-box input { height: 38px; font-size: 12px; padding-left: 38px; }
+    .forgot { margin-bottom: 15px; }
+    .forgot a, .remember { font-size: 10.5px; }
+    .login-form button.action-btn { width: 230px; height: 38px; font-size: 12px; }
+}
+
+@media (max-width: 430px) {
+    .flip-scene { width: 335px; height: 335px; }
+    .glass-circle { width: 335px; height: 335px; }
+    .login-form { width: 200px; }
+    .login-form h1 { font-size: 24px; }
+    .login-form .subtitle { font-size: 10px; margin-bottom: 10px; }
+    .input-box { margin-bottom: 9px; }
+    .input-box input { height: 34px; font-size: 11px; padding-left: 32px; border-radius: 9px; }
+    .forgot { margin-bottom: 12px; }
+    .forgot a, .remember { font-size: 9.5px; }
+    .login-form button.action-btn { width: 200px; height: 34px; font-size: 11px; border-radius: 9px; }
+}
