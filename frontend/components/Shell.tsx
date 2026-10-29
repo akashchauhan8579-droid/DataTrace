@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -11,6 +12,14 @@ interface ShellProps {
 
 export function Shell({ currentCaseId, caseDisplayId, children }: ShellProps) {
   const pathname = usePathname();
+
+  // ── Sliding indicator state ──────────────────────────────────────────────
+  const [indicator, setIndicator] = useState<{ left: number; width: number; ready: boolean }>(
+    { left: 0, width: 0, ready: false }
+  );
+  const containerRef = useRef<HTMLElement>(null);
+  const tabRefs = useRef<Map<string, HTMLAnchorElement>>(new Map());
+  const hasMounted = useRef(false);
 
   const navItems = currentCaseId
     ? [
@@ -24,6 +33,36 @@ export function Shell({ currentCaseId, caseDisplayId, children }: ShellProps) {
         { label: 'Audit Ledger', href: `/cases/${currentCaseId}/audit` },
       ]
     : [];
+
+  // Update indicator position when pathname or caseId changes
+  useEffect(() => {
+    if (!currentCaseId) return;
+    const update = () => {
+      const activeItem = navItems.find((item) =>
+        item.href === `/cases/${currentCaseId}`
+          ? pathname === item.href
+          : pathname.startsWith(item.href)
+      );
+      if (!activeItem) { setIndicator((p) => ({ ...p, ready: false })); return; }
+      const el = tabRefs.current.get(activeItem.href);
+      const nav = containerRef.current;
+      if (el && nav) {
+        setIndicator({ left: el.offsetLeft, width: el.offsetWidth, ready: true });
+      }
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, currentCaseId]);
+
+  // Mark mounted after first indicator paint (prevents slide-in on load)
+  useEffect(() => {
+    if (indicator.ready) {
+      const id = requestAnimationFrame(() => { hasMounted.current = true; });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [indicator.ready]);
 
   return (
     <div className="min-h-screen flex flex-col bg-paper text-ink selection:bg-amber/25 selection:text-ink">
@@ -48,7 +87,33 @@ export function Shell({ currentCaseId, caseDisplayId, children }: ShellProps) {
         </div>
 
         {currentCaseId && (
-          <nav className="hidden md:flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] font-mono">
+          <nav
+            ref={containerRef as React.RefObject<HTMLElement>}
+            className="hidden md:flex items-center gap-1 text-[11px] uppercase tracking-[0.12em] font-mono relative"
+          >
+            {/* Sliding indicator pill */}
+            {indicator.ready && (
+              <span
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: indicator.left,
+                  width: indicator.width,
+                  height: '100%',
+                  borderRadius: '2px',
+                  pointerEvents: 'none',
+                  zIndex: 0,
+                  transition: hasMounted.current
+                    ? 'left 300ms cubic-bezier(0.4,0,0.2,1), width 300ms cubic-bezier(0.4,0,0.2,1)'
+                    : 'none',
+                  // @ts-ignore — CSS custom props
+                  '--tw-bg-opacity': '1',
+                }}
+                className="bg-paper-2 border-b-2 border-copper [@media(prefers-reduced-motion:reduce)]:transition-none"
+              />
+            )}
+
             {navItems.map((item) => {
               const isActive =
                 item.href === `/cases/${currentCaseId}`
@@ -59,11 +124,20 @@ export function Shell({ currentCaseId, caseDisplayId, children }: ShellProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`px-3 py-1.5 rounded-sm transition-colors relative ${
-                    isActive
-                      ? 'bg-paper-2 text-ink font-semibold border-b-2 border-copper'
-                      : 'text-muted-ink hover:text-ink hover:bg-paper-2/60'
-                  }`}
+                  ref={(el) => {
+                    if (el) tabRefs.current.set(item.href, el);
+                    else tabRefs.current.delete(item.href);
+                  }}
+                  className={`relative z-10 px-3 py-1.5 rounded-sm
+                    transition-[color,background-color,opacity] duration-200 ease-out
+                    active:scale-[0.97] active:transition-transform active:duration-100
+                    focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-copper/50
+                    [@media(prefers-reduced-motion:reduce)]:transition-none
+                    ${
+                      isActive
+                        ? 'text-ink font-semibold'
+                        : 'text-muted-ink hover:text-ink hover:bg-paper-2/50'
+                    }`}
                 >
                   {item.label}
                 </Link>
