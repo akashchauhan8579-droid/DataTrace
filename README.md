@@ -70,13 +70,8 @@ The full end-to-end workflow is live and operational at https://data-trace-kappa
 | **P0-Hardening** | SQL migrations include audit/invariant work and two pgTAP files are checked in, but the database gates have not been run in this checkout. | Partially implemented; unverified |
 | **P1-0** | Gmail import (§5.5 of the spec) | Implemented; OAuth app in Testing mode |
 | **P1-A** | Timeline, graph, friction signals, remaining P1 rules, exact-range highlighting, DOCX, screenshots and PDF export | Not implemented |
-<<<<<<< HEAD
 | **P1-B** | GDPR Art. 17 account deletion, resumable purge state machine, anonymised erasure receipts and account JSON export | **Implemented** |
 | **P2** | Continuous Gmail sync, HTTP probes, DPO routing, DKIM verification, monitoring, personal-data map, DPDP pack and public deployment | Not implemented |
-=======
-| **P2** | Continuous Gmail sync, HTTP probes, DPO directory routing, server-side email delivery, DKIM verification, monitoring, personal-data map, DPDP pack and public deployment | Not implemented |
->>>>>>> origin/feat/email-dispatch
-
 Six P0 verification rule modules are present. The five P1 rules in the master spec are not implemented. See the implementation and test status above; passing unit tests do not establish the full release gates.
 
 ## Team and work division
