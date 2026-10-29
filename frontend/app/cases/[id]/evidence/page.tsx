@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { SourceType } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
+import { queryKeys } from '@/lib/queries';
 
 interface GmailThreadSummary {
   threadId: string;
@@ -20,6 +22,7 @@ interface GmailThreadSummary {
 export default function EvidenceUploadPage() {
   const params = useParams();
   const caseId = params.id as string;
+  const queryClient = useQueryClient();
 
   const [mode, setMode] = useState<'FILE' | 'MANUAL' | 'GMAIL'>('FILE');
   const [sourceType, setSourceType] = useState<SourceType>('EMAIL');
@@ -126,6 +129,7 @@ export default function EvidenceUploadPage() {
     try {
       const res = await api.gmail.importThread(caseId, threadId);
       setGmailImportResult(res);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
     } catch (err: any) {
       setError(err.message || 'Failed to import messages from thread');
     } finally {
@@ -176,6 +180,7 @@ export default function EvidenceUploadPage() {
         segmentCount: res.segmentCount,
       });
       setFile(null);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
     } catch (err: any) {
       setError(err.message || 'Evidence upload failed');
     } finally {
@@ -207,6 +212,7 @@ export default function EvidenceUploadPage() {
       });
       setManualTitle('');
       setManualContent('');
+      await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
     } catch (err: any) {
       setError(err.message || 'Failed to save manual log');
     } finally {
@@ -216,7 +222,7 @@ export default function EvidenceUploadPage() {
 
   return (
     <Shell currentCaseId={caseId}>
-      <div className="flex-1 max-w-4xl w-full mx-auto p-8">
+      <div className="flex-1 max-w-4xl w-full mx-auto p-8 fade-in">
         <div className="border-b border-hairline pb-4 mb-8">
           <Link
             href={`/cases/${caseId}`}

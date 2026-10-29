@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import Providers from './providers';
 
 export const metadata: Metadata = {
   title: 'DataTrace — Evidence-centred Case Tool',
@@ -22,7 +23,7 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-paper text-ink min-h-screen flex flex-col font-sans antialiased selection:bg-amber/20 selection:text-ink">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

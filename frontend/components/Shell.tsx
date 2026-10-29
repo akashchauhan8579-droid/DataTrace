@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { usePrefetchCaseTabs } from '@/lib/queries';
 
 interface ShellProps {
   currentCaseId?: string;
@@ -12,6 +13,9 @@ interface ShellProps {
 
 export function Shell({ currentCaseId, caseDisplayId, children }: ShellProps) {
   const pathname = usePathname();
+
+  // Warm every case tab as soon as the case shell mounts.
+  usePrefetchCaseTabs(currentCaseId);
 
   // ── Sliding indicator state ──────────────────────────────────────────────
   const [indicator, setIndicator] = useState<{ left: number; width: number; ready: boolean }>(

@@ -1,50 +1,33 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { Finding } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { FindingRow } from '@/components/FindingRow';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
+import { queryKeys, useCaseTab, useRedirectOnAuthError } from '@/lib/queries';
 
 export default function FindingsPage() {
   const params = useParams();
   const caseId = params.id as string;
+  const queryClient = useQueryClient();
 
-  const [findings, setFindings] = useState<Finding[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useCaseTab(caseId, 'findings');
+  useRedirectOnAuthError(error);
+
+  const findings: Finding[] = data?.findings ?? [];
   const [filterType, setFilterType] = useState<string>('ALL');
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-
-  const fetchFindings = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.findings.list(caseId);
-      setFindings(data.findings || []);
-    } catch (err: any) {
-      if (err.code === 'UNAUTHENTICATED' || err.status === 401) {
-        window.location.href = '/auth';
-        return;
-      }
-      setError(err.message || 'Failed to load findings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchFindings();
-  }, [caseId]);
 
   const handleConfirm = async (findingId: string) => {
     setConfirmingId(findingId);
     try {
       await api.findings.confirm(findingId, 'READING_CONFIRMED');
-      await fetchFindings();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
     } catch (err: any) {
       alert(`Confirmation failed: ${err.message}`);
     } finally {
@@ -62,7 +45,7 @@ export default function FindingsPage() {
 
   return (
     <Shell currentCaseId={caseId}>
-      <div className="flex-1 max-w-6xl w-full mx-auto p-8">
+      <div className="flex-1 max-w-6xl w-full mx-auto p-8 fade-in">
         <div className="border-b border-hairline pb-4 mb-6">
           <Link
             href={`/cases/${caseId}`}
@@ -99,11 +82,11 @@ export default function FindingsPage() {
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-xs font-sans rounded-sm">
-            {error}
+            {error.message}
           </div>
         )}
 
-        {loading ? (
+        {isLoading ? (
           <div className="py-20 text-center font-mono text-xs text-muted-ink">
             Loading verified finding records...
           </div>

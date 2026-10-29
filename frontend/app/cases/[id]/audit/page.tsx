@@ -1,46 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
-import type { AuditEvent } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
+import { useCaseTab, useRedirectOnAuthError } from '@/lib/queries';
 
 export default function AuditPage() {
   const params = useParams();
   const caseId = params.id as string;
 
-  const [events, setEvents] = useState<AuditEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useCaseTab(caseId, 'audit');
+  useRedirectOnAuthError(error);
 
-  useEffect(() => {
-    const fetchAudit = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await api.audit.list(caseId);
-        setEvents(data.events || []);
-      } catch (err: any) {
-        if (err.code === 'UNAUTHENTICATED' || err.status === 401) {
-          window.location.href = '/auth';
-          return;
-        }
-        setError(err.message || 'Error loading audit trail');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAudit();
-  }, [caseId]);
+  const events = data?.events ?? [];
 
   return (
     <Shell currentCaseId={caseId}>
       {/* Dark cinematic section for cryptographic integrity audit (§23 visual spec) */}
-      <div className="flex-1 bg-night text-on-night p-8">
+      <div className="flex-1 bg-night text-on-night p-8 fade-in">
         <div className="max-w-5xl w-full mx-auto">
           <div className="border-b border-white/10 pb-4 mb-8">
             <Link
@@ -68,11 +46,11 @@ export default function AuditPage() {
 
           {error && (
             <div className="mb-6 p-4 bg-red-900/30 border border-red-500/40 text-red-200 text-xs font-mono rounded-sm">
-              {error}
+              {error.message}
             </div>
           )}
 
-          {loading ? (
+          {isLoading ? (
             <div className="py-20 text-center font-mono text-xs text-white/40">
               Verifying hash-chained event ledgers...
             </div>

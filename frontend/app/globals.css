@@ -171,3 +171,47 @@ body {
     animation: none !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Loading skeletons & page fade-in
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.skeleton {
+  background: linear-gradient(90deg, #e6e2d6 25%, #efebe0 50%, #e6e2d6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+  border-radius: 4px;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.2s ease-out both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Stops the footer jumping while a tab's data resolves. */
+main {
+  min-height: calc(100vh - 160px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .fade-in {
+    animation: none;
+  }
+}

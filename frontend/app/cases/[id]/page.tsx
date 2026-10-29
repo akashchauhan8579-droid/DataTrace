@@ -3,59 +3,55 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { Case, EvidenceItem, Finding, AnalysisRun } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { EvidenceCard } from '@/components/EvidenceCard';
 import { ConsentDialog } from '@/components/ConsentDialog';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
+import {
+  queryKeys,
+  useCaseDetail,
+  useEvidenceList,
+  useFindings,
+  useRedirectOnAuthError,
+  useRuns,
+} from '@/lib/queries';
 
 export default function CaseDashboardPage() {
   const params = useParams();
   const caseId = params.id as string;
+  const queryClient = useQueryClient();
 
-  const [currentCase, setCurrentCase] = useState<Case | null>(null);
-  const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
-  const [findings, setFindings] = useState<Finding[]>([]);
-  const [runs, setRuns] = useState<AnalysisRun[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const caseQuery = useCaseDetail(caseId);
+  const evidenceQuery = useEvidenceList(caseId);
+  const findingsQuery = useFindings(caseId);
+  const runsQuery = useRuns(caseId);
+
+  useRedirectOnAuthError(caseQuery.error);
+  useRedirectOnAuthError(evidenceQuery.error);
+  useRedirectOnAuthError(findingsQuery.error);
+  useRedirectOnAuthError(runsQuery.error);
+
+  const currentCase: Case | null = caseQuery.data ?? null;
+  const evidence: EvidenceItem[] = evidenceQuery.data?.evidence ?? [];
+  const findings: Finding[] = findingsQuery.data?.findings ?? [];
+  const runs: AnalysisRun[] = runsQuery.data?.runs ?? [];
+
+  const loading =
+    caseQuery.isLoading ||
+    evidenceQuery.isLoading ||
+    findingsQuery.isLoading ||
+    runsQuery.isLoading;
+  const error = caseQuery.error as Error | null;
 
   // Analysis / Consent state
   const [showConsent, setShowConsent] = useState(false);
   const [hasConsent, setHasConsent] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [caseData, evData, findingsData, runsData] = await Promise.all([
-        api.cases.get(caseId),
-        api.evidence.list(caseId).catch(() => ({ evidence: [] })),
-        api.findings.list(caseId).catch(() => ({ findings: [] })),
-        api.analysis.listRuns(caseId).catch(() => ({ runs: [] })),
-      ]);
-
-      setCurrentCase(caseData);
-      setEvidence(evData.evidence || []);
-      setFindings(findingsData.findings || []);
-      setRuns(runsData.runs || []);
-    } catch (err: any) {
-      if (err.code === 'UNAUTHENTICATED' || err.status === 401) {
-        window.location.href = '/auth';
-        return;
-      }
-      setError(err.message || 'Error loading case details');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, [caseId]);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Polling for active run
   useEffect(() => {
@@ -67,7 +63,7 @@ export default function CaseDashboardPage() {
         if (run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'CANCELLED') {
           setActiveRunId(null);
           setAnalyzing(false);
-          await loadData();
+          await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
         }
       } catch {
         setActiveRunId(null);
@@ -76,12 +72,12 @@ export default function CaseDashboardPage() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [activeRunId]);
+  }, [activeRunId, caseId, queryClient]);
 
   const handleStartAnalysis = async () => {
     setAnalyzing(true);
     setShowConsent(false);
-    setError(null);
+    setStartError(null);
 
     try {
       // Invariant §15.2: Explicitly record AI consent for this case.
@@ -91,9 +87,9 @@ export default function CaseDashboardPage() {
 
       const res = await api.analysis.start(caseId);
       setActiveRunId(res.runId);
-      await loadData();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
     } catch (err: any) {
-      setError(err.message || 'Failed to authorize and start analysis run');
+      setStartError(err.message || 'Failed to authorize and start analysis run');
       setAnalyzing(false);
     }
   };
@@ -104,10 +100,10 @@ export default function CaseDashboardPage() {
 
   return (
     <Shell currentCaseId={caseId} caseDisplayId={currentCase?.displayId}>
-      <div className="flex-1 flex flex-col p-8 max-w-7xl w-full mx-auto">
-        {error && (
+      <div className="flex-1 flex flex-col p-8 max-w-7xl w-full mx-auto fade-in">
+        {(startError || error) && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-xs font-sans rounded-sm">
-            {error}
+            {startError || error?.message}
           </div>
         )}
 

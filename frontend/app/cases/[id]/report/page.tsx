@@ -1,68 +1,49 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { Report, Finding, EvidenceDetail, ReportLens } from '@/lib/types';
+import type { Report, Finding, ReportLens } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { ReportEditor } from '@/components/ReportEditor';
 import { SegmentView } from '@/components/SegmentView';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
+import {
+  queryKeys,
+  useCaseTab,
+  useEvidenceDetail,
+  useRedirectOnAuthError,
+} from '@/lib/queries';
 
 export default function ReportPage() {
   const params = useParams();
   const caseId = params.id as string;
+  const queryClient = useQueryClient();
 
-  const [reports, setReports] = useState<Report[]>([]);
+  const { data, isLoading, error } = useCaseTab(caseId, 'report');
+  useRedirectOnAuthError(error);
+
+  const reports: Report[] = data?.reports ?? [];
+  const findings: Finding[] = data?.findings ?? [];
+  const evidenceList = data?.evidence ?? [];
+
   const [activeReport, setActiveReport] = useState<Report | null>(null);
-  const [findings, setFindings] = useState<Finding[]>([]);
-  const [evidenceList, setEvidenceList] = useState<{ id: string; display_id: string }[]>([]);
-  const [selectedEvidenceDetail, setSelectedEvidenceDetail] = useState<EvidenceDetail | null>(null);
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
 
   const [lens, setLens] = useState<ReportLens>('EVIDENCE');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [reportsData, findingsData, evData] = await Promise.all([
-        api.reports.list(caseId).catch(() => ({ reports: [] })),
-        api.findings.list(caseId).catch(() => ({ findings: [] })),
-        api.evidence.list(caseId).catch(() => ({ evidence: [] })),
-      ]);
+  // Fall back to the first cached report until a draft is created/saved.
+  const currentReport = activeReport ?? reports[0] ?? null;
 
-      setReports(reportsData.reports || []);
-      setFindings(findingsData.findings || []);
-      setEvidenceList(evData.evidence || []);
-
-      if (reportsData.reports?.length > 0) {
-        setActiveReport(reportsData.reports[0]);
-      }
-
-      if (evData.evidence?.length > 0) {
-        const detail = await api.evidence.get(evData.evidence[0].id).catch(() => null);
-        setSelectedEvidenceDetail(detail);
-      }
-    } catch (err: any) {
-      if (err.code === 'UNAUTHENTICATED' || err.status === 401) {
-        window.location.href = '/auth';
-        return;
-      }
-      setError(err.message || 'Error loading reports data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, [caseId]);
+  const evidenceId = selectedEvidenceId ?? evidenceList[0]?.id ?? null;
+  const {
+    data: selectedEvidenceDetail,
+    isLoading: loadingEvidenceDetail,
+  } = useEvidenceDetail(evidenceId);
 
   const handleCreateReport = async () => {
     try {
@@ -71,7 +52,7 @@ export default function ReportPage() {
         framework: 'GDPR',
       });
       setActiveReport(res.report);
-      await loadData();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
     } catch (err: any) {
       alert(`Draft generation failed: ${err.message}`);
     }
@@ -82,6 +63,10 @@ export default function ReportPage() {
     try {
       const res = await api.reports.update(updated.id, updated.content);
       setActiveReport(res.report);
+      // Invalidate both the granular list key and the report tab key so the
+      // (cached) list used for tab-level cache invalidation stays coherent.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.reports(caseId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tab(caseId, 'report') });
     } catch (err: any) {
       alert(`Save error: ${err.message}`);
     } finally {
@@ -90,12 +75,12 @@ export default function ReportPage() {
   };
 
   const handleValidateReport = async () => {
-    if (!activeReport) throw new Error('No active report');
+    if (!currentReport) throw new Error('No active report');
     setValidating(true);
     try {
-      const res = await api.reports.validate(activeReport.id);
+      const res = await api.reports.validate(currentReport.id);
       setActiveReport({
-        ...activeReport,
+        ...currentReport,
         validation_status: res.validationStatus as any,
       });
       return res.details;
@@ -105,15 +90,15 @@ export default function ReportPage() {
   };
 
   const handleExport = async () => {
-    if (!activeReport) return;
+    if (!currentReport) return;
     try {
-      const res = await api.reports.export(activeReport.id);
+      const res = await api.reports.export(currentReport.id);
       // Trigger download
       const blob = new Blob([res.markdown], { type: 'text/markdown;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `datatrace-report-${activeReport.id.slice(0, 8)}.md`);
+      link.setAttribute('download', `datatrace-report-${currentReport.id.slice(0, 8)}.md`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -122,18 +107,13 @@ export default function ReportPage() {
     }
   };
 
-  const handleSelectEvidence = async (evId: string) => {
-    try {
-      const detail = await api.evidence.get(evId);
-      setSelectedEvidenceDetail(detail);
-    } catch {
-      // ignore
-    }
+  const handleSelectEvidence = (evId: string) => {
+    setSelectedEvidenceId(evId);
   };
 
   return (
     <Shell currentCaseId={caseId}>
-      <div className="flex-1 max-w-7xl w-full mx-auto p-8">
+      <div className="flex-1 max-w-7xl w-full mx-auto p-8 fade-in">
         <div className="border-b border-hairline pb-4 mb-6">
           <Link
             href={`/cases/${caseId}`}
@@ -173,15 +153,15 @@ export default function ReportPage() {
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-xs font-sans rounded-sm">
-            {error}
+            {error.message}
           </div>
         )}
 
-        {loading ? (
+        {isLoading ? (
           <div className="py-20 text-center font-mono text-xs text-muted-ink">
             Loading draft reports and groundings...
           </div>
-        ) : !activeReport ? (
+        ) : !currentReport ? (
           <div className="py-24 text-center border border-dashed border-hairline rounded-sm bg-paper-2/40 max-w-md mx-auto p-8">
             <h2 className="text-xl font-serif text-ink mb-2">No Report Drafted Yet</h2>
             <p className="text-xs font-sans text-muted-ink mb-4">
@@ -199,12 +179,12 @@ export default function ReportPage() {
             {/* Left: Report Editor */}
             <div>
               <div className="flex items-center justify-between text-xs font-mono text-muted-ink mb-3 pb-1 border-b border-hairline">
-                <span>DRAFT EDITOR · {activeReport.active_lens} LENS</span>
-                <span>STATUS: {activeReport.status}</span>
+                <span>DRAFT EDITOR · {currentReport.active_lens} LENS</span>
+                <span>STATUS: {currentReport.status}</span>
               </div>
 
               <ReportEditor
-                report={activeReport}
+                report={currentReport}
                 findings={findings}
                 onSave={handleSaveReport}
                 onValidate={handleValidateReport}
@@ -220,6 +200,7 @@ export default function ReportPage() {
                 <span>EVIDENCE REFERENCE PANEL</span>
                 {evidenceList.length > 0 && (
                   <select
+                    value={evidenceId ?? ''}
                     onChange={(e) => handleSelectEvidence(e.target.value)}
                     className="bg-paper-2 border border-hairline px-2 py-1 text-[11px] font-mono rounded-sm"
                   >
@@ -232,7 +213,11 @@ export default function ReportPage() {
                 )}
               </div>
 
-              {selectedEvidenceDetail ? (
+              {loadingEvidenceDetail ? (
+                <div className="p-8 text-center bg-paper-2/40 border border-hairline text-xs font-mono text-muted-ink">
+                  Loading preserved text segments...
+                </div>
+              ) : selectedEvidenceDetail ? (
                 <div className="space-y-3 max-h-[700px] overflow-y-auto pr-2">
                   <div className="text-xs font-mono text-muted-ink mb-2">
                     {selectedEvidenceDetail.item.original_filename} (

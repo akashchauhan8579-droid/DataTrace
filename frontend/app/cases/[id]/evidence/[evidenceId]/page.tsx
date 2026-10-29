@@ -1,44 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import type { EvidenceDetail } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { SegmentView } from '@/components/SegmentView';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
+import { useEvidenceDetail, useRedirectOnAuthError } from '@/lib/queries';
 
 export default function EvidenceViewerPage() {
   const params = useParams();
   const caseId = params.id as string;
   const evidenceId = params.evidenceId as string;
 
-  const [detail, setDetail] = useState<EvidenceDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: detail, isLoading: loading, error } = useEvidenceDetail(evidenceId);
+  useRedirectOnAuthError(error);
+
   const [downloading, setDownloading] = useState(false);
-
-  useEffect(() => {
-    const fetchEvidence = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await api.evidence.get(evidenceId);
-        setDetail(data);
-      } catch (err: any) {
-        if (err.code === 'UNAUTHENTICATED' || err.status === 401) {
-          window.location.href = '/auth';
-          return;
-        }
-        setError(err.message || 'Error loading evidence');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchEvidence();
-  }, [evidenceId]);
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -54,7 +33,7 @@ export default function EvidenceViewerPage() {
 
   return (
     <Shell currentCaseId={caseId}>
-      <div className="flex-1 max-w-6xl w-full mx-auto p-8">
+      <div className="flex-1 max-w-6xl w-full mx-auto p-8 fade-in">
         <div className="border-b border-hairline pb-4 mb-6">
           <Link
             href={`/cases/${caseId}`}
@@ -95,7 +74,7 @@ export default function EvidenceViewerPage() {
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-xs font-sans rounded-sm">
-            {error}
+            {error.message}
           </div>
         )}
 

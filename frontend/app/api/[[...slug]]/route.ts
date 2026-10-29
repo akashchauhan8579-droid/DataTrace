@@ -3,6 +3,7 @@ import { route } from '../../../../backend/api/router';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+export const preferredRegion = 'bom1';
 
 async function handler(
   req: Request,

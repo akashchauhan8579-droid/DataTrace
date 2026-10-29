@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
 import type { Case, EvidenceItem, Finding } from '@/lib/types';
 import { Shell } from '@/components/Shell';
 import { DisclaimerFooter } from '@/components/DisclaimerFooter';
+import { useCaseTab, useRedirectOnAuthError } from '@/lib/queries';
 
 interface TimelineEvent {
   id: string;
@@ -23,90 +23,74 @@ interface TimelineEvent {
   sourceType?: string;
 }
 
+function buildTimeline(evidence: EvidenceItem[], findings: Finding[]): TimelineEvent[] {
+  const timelineList: TimelineEvent[] = [];
+
+  // 1. Evidence items
+  for (const item of evidence) {
+    const date = item.captured_at || item.uploaded_at;
+    timelineList.push({
+      id: `ev-${item.id}`,
+      timestamp: date,
+      isUncertainDate: !item.captured_at,
+      category: 'EVIDENCE',
+      title: `Preserved Evidence: ${item.original_filename}`,
+      summary: `Format: ${item.mime_type} • SHA-256: ${item.sha256.slice(0, 16)}...`,
+      displayId: item.display_id,
+      evidenceId: item.id,
+      sourceType: item.source_type,
+    });
+  }
+
+  // 2. Findings
+  for (const f of findings) {
+    let category: TimelineEvent['category'] = 'FINDING';
+    const typeUpper = (f.finding_type || '').toUpperCase();
+    if (typeUpper.includes('REQUEST')) category = 'REQUEST';
+    else if (typeUpper.includes('RESPONSE')) category = 'RESPONSE';
+    else if (f.evidence_basis === 'CONFLICTING' || f.verification_state === 'CONTRADICTED') category = 'CONTRADICTION';
+
+    const payload = f.structured_payload || {};
+    // Extract date from payload or fallback to current time
+    const eventDate = (payload as any).occurredAt || (payload as any).date || new Date().toISOString();
+    const isUncertain = !(payload as any).occurredAt;
+
+    const firstCitation = f.citations?.[0];
+
+    timelineList.push({
+      id: `fnd-${f.id}`,
+      timestamp: eventDate,
+      isUncertainDate: isUncertain,
+      category,
+      title: (payload as any).summary || (payload as any).title || `${f.finding_type}: ${f.display_id}`,
+      summary: f.statement || (payload as any).details || 'Extracted case statement',
+      displayId: f.display_id,
+      basis: f.evidence_basis,
+      state: f.verification_state,
+      evidenceId: firstCitation?.evidence_id,
+      segmentId: firstCitation?.segment_id,
+    });
+  }
+
+  return timelineList;
+}
+
 export default function CaseTimelinePage() {
   const params = useParams();
   const caseId = params.id as string;
 
-  const [caseData, setCaseData] = useState<Case | null>(null);
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useCaseTab(caseId, 'timeline');
+  useRedirectOnAuthError(error);
+
+  const caseData: Case | null = data?.caseData ?? null;
+  const evidence = data?.evidence ?? [];
+  const findings = data?.findings ?? [];
+
+  const events = useMemo(() => buildTimeline(evidence, findings), [evidence, findings]);
 
   // Filters
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('ASC');
-
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [c, evRes, fRes] = await Promise.all([
-          api.cases.get(caseId),
-          api.evidence.list(caseId),
-          api.findings.list(caseId),
-        ]);
-
-        setCaseData(c);
-
-        const timelineList: TimelineEvent[] = [];
-
-        // 1. Evidence items
-        for (const item of evRes.evidence || []) {
-          const date = item.captured_at || item.uploaded_at;
-          timelineList.push({
-            id: `ev-${item.id}`,
-            timestamp: date,
-            isUncertainDate: !item.captured_at,
-            category: 'EVIDENCE',
-            title: `Preserved Evidence: ${item.original_filename}`,
-            summary: `Format: ${item.mime_type} • SHA-256: ${item.sha256.slice(0, 16)}...`,
-            displayId: item.display_id,
-            evidenceId: item.id,
-            sourceType: item.source_type,
-          });
-        }
-
-        // 2. Findings
-        for (const f of fRes.findings || []) {
-          let category: TimelineEvent['category'] = 'FINDING';
-          const typeUpper = (f.finding_type || '').toUpperCase();
-          if (typeUpper.includes('REQUEST')) category = 'REQUEST';
-          else if (typeUpper.includes('RESPONSE')) category = 'RESPONSE';
-          else if (f.evidence_basis === 'CONFLICTING' || f.verification_state === 'CONTRADICTED') category = 'CONTRADICTION';
-
-          const payload = f.structured_payload || {};
-          // Extract date from payload or fallback to current time
-          const eventDate = (payload as any).occurredAt || (payload as any).date || new Date().toISOString();
-          const isUncertain = !(payload as any).occurredAt;
-
-          const firstCitation = f.citations?.[0];
-
-          timelineList.push({
-            id: `fnd-${f.id}`,
-            timestamp: eventDate,
-            isUncertainDate: isUncertain,
-            category,
-            title: (payload as any).summary || (payload as any).title || `${f.finding_type}: ${f.display_id}`,
-            summary: f.statement || (payload as any).details || 'Extracted case statement',
-            displayId: f.display_id,
-            basis: f.evidence_basis,
-            state: f.verification_state,
-            evidenceId: firstCitation?.evidence_id,
-            segmentId: firstCitation?.segment_id,
-          });
-        }
-
-        setEvents(timelineList);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load case chronological timeline');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadData();
-  }, [caseId]);
 
   const filteredEvents = events
     .filter((e) => {
@@ -125,7 +109,7 @@ export default function CaseTimelinePage() {
 
   return (
     <Shell currentCaseId={caseId} caseDisplayId={caseData?.displayId}>
-      <div className="flex-1 max-w-5xl w-full mx-auto p-6 md:p-8">
+      <div className="flex-1 max-w-5xl w-full mx-auto p-6 md:p-8 fade-in">
         {/* Header */}
         <div className="border-b border-hairline pb-4 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -160,7 +144,7 @@ export default function CaseTimelinePage() {
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-xs font-sans rounded-sm">
-            {error}
+            {error.message}
           </div>
         )}
 
@@ -199,7 +183,7 @@ export default function CaseTimelinePage() {
         </div>
 
         {/* Timeline View */}
-        {loading ? (
+        {isLoading ? (
           <div className="p-12 text-center font-mono text-xs text-muted-ink">
             ASSEMBLING CHRONOLOGICAL DOSSIER...
           </div>
