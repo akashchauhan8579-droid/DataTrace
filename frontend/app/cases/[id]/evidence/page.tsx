@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
@@ -17,6 +17,20 @@ interface GmailThreadSummary {
   snippet: string;
   messageCount: number;
   lastMessageAt: string;
+}
+
+function extractSenderOrg(from: string): { orgName: string; domain: string } {
+  const emailMatch = from.match(/<([^>]+)>/) || from.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+  const email = emailMatch ? emailMatch[1] : '';
+  const domain = email.includes('@') ? email.split('@')[1].toLowerCase() : 'other';
+
+  let displayName = from.replace(/<[^>]+>/, '').replace(/["']/g, '').trim();
+  if (!displayName || displayName === email) {
+    const base = domain.split('.')[0];
+    displayName = base ? base.charAt(0).toUpperCase() + base.slice(1) : 'Unknown Provider';
+  }
+
+  return { orgName: displayName, domain };
 }
 
 export default function EvidenceUploadPage() {
@@ -46,6 +60,35 @@ export default function EvidenceUploadPage() {
   const [loadingThreads, setLoadingThreads] = useState(false);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [groupByOrg, setGroupByOrg] = useState(true);
+  const [expandedOrgs, setExpandedOrgs] = useState<Record<string, boolean>>({});
+
+  const orgGroups = useMemo(() => {
+    const map = new Map<string, { domain: string; orgName: string; threads: GmailThreadSummary[] }>();
+    for (const thread of gmailThreads) {
+      const { orgName, domain } = extractSenderOrg(thread.from);
+      if (!map.has(domain)) {
+        map.set(domain, { domain, orgName, threads: [] });
+      }
+      map.get(domain)!.threads.push(thread);
+    }
+    return Array.from(map.values()).sort((a, b) => b.threads.length - a.threads.length);
+  }, [gmailThreads]);
+
+  function toggleOrg(domain: string) {
+    setExpandedOrgs((prev) => ({
+      ...prev,
+      [domain]: prev[domain] !== undefined ? !prev[domain] : false,
+    }));
+  }
+
+  function toggleAllOrgs(expand: boolean) {
+    const next: Record<string, boolean> = {};
+    for (const g of orgGroups) {
+      next[g.domain] = expand;
+    }
+    setExpandedOrgs(next);
+  }
   const [importingThreadId, setImportingThreadId] = useState<string | null>(null);
   const [gmailImportResult, setGmailImportResult] = useState<{
     items: Array<{ id: string; displayId: string; sha256: string; duplicate: boolean }>;
@@ -576,10 +619,40 @@ export default function EvidenceUploadPage() {
                   </button>
                 </form>
 
-                {/* Thread results list */}
-                <div className="space-y-2">
-                  <div className="text-[11px] font-mono text-muted-ink uppercase tracking-wider">
-                    Discovered Threads ({gmailThreads.length})
+                {/* Thread results list with Organization Grouping & Pagination */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2 pt-1 pb-1">
+                    <div className="text-[11px] font-mono text-muted-ink uppercase tracking-wider">
+                      Discovered Threads ({gmailThreads.length})
+                      {gmailThreads.length > 0 && groupByOrg && (
+                        <span className="ml-1 text-copper font-semibold">
+                          across {orgGroups.length} provider{orgGroups.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    {gmailThreads.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setGroupByOrg(!groupByOrg)}
+                          className="px-2.5 py-1 rounded-sm text-[10px] font-mono uppercase tracking-wider border border-hairline bg-paper text-ink hover:border-ink/40 transition-colors flex items-center gap-1.5 shadow-xs"
+                        >
+                          <span>{groupByOrg ? '📁 Grouped by Org' : '≡ Flat List'}</span>
+                        </button>
+                        {groupByOrg && orgGroups.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allExpanded = orgGroups.every((g) => expandedOrgs[g.domain] ?? true);
+                              toggleAllOrgs(!allExpanded);
+                            }}
+                            className="text-[10px] font-mono text-muted-ink hover:text-ink underline transition-colors"
+                          >
+                            {orgGroups.every((g) => expandedOrgs[g.domain] ?? true) ? 'Collapse All' : 'Expand All'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {gmailThreads.length === 0 && !loadingThreads && (
@@ -588,37 +661,119 @@ export default function EvidenceUploadPage() {
                     </div>
                   )}
 
-                  {gmailThreads.map((thread) => (
-                    <div
-                      key={thread.threadId}
-                      className="p-4 bg-paper-2 border border-hairline hover:border-ink/30 transition-colors rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                    >
-                      <div className="space-y-1 min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-serif font-medium text-ink truncate text-sm">
-                            {thread.subject}
-                          </span>
-                          <span className="text-[10px] font-mono text-muted-ink px-1.5 py-0.5 bg-paper rounded border border-hairline whitespace-nowrap">
-                            {thread.messageCount} msg{thread.messageCount > 1 ? 's' : ''}
-                          </span>
-                        </div>
-                        <p className="text-xs font-sans text-muted-ink line-clamp-2">
-                          {thread.snippet}
-                        </p>
-                        <div className="text-[11px] font-mono text-muted-ink">
-                          From: {thread.from} • {new Date(thread.lastMessageAt).toLocaleDateString()}
-                        </div>
-                      </div>
+                  {/* Mode 1: Organization Grouped Folders */}
+                  {groupByOrg && orgGroups.length > 0 ? (
+                    <div className="space-y-3">
+                      {orgGroups.map((group) => {
+                        const isExpanded = expandedOrgs[group.domain] ?? true;
+                        return (
+                          <div
+                            key={group.domain}
+                            className="border border-hairline bg-paper-2 rounded-sm overflow-hidden transition-all shadow-xs"
+                          >
+                            {/* Organization Folder Header */}
+                            <button
+                              type="button"
+                              onClick={() => toggleOrg(group.domain)}
+                              className="w-full px-4 py-2.5 bg-paper flex items-center justify-between hover:bg-paper-2/80 transition-colors text-left"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="text-amber font-mono text-xs">
+                                  {isExpanded ? '▾' : '▸'}
+                                </span>
+                                <span className="text-sm">📁</span>
+                                <span className="font-serif font-semibold text-ink text-sm truncate">
+                                  {group.orgName}
+                                </span>
+                                <span className="text-[10px] font-mono text-muted-ink px-1.5 py-0.5 bg-paper-2 rounded border border-hairline">
+                                  @{group.domain}
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-copper bg-copper/10 px-2 py-0.5 rounded-sm whitespace-nowrap">
+                                {group.threads.length} thread{group.threads.length > 1 ? 's' : ''}
+                              </span>
+                            </button>
 
-                      <button
-                        onClick={() => handleImportThread(thread.threadId)}
-                        disabled={importingThreadId === thread.threadId}
-                        className="bg-copper text-paper px-4 py-2 text-xs font-mono uppercase tracking-wider font-semibold rounded-sm hover:bg-umber transition-colors disabled:opacity-50 whitespace-nowrap self-start sm:self-center shadow-xs"
-                      >
-                        {importingThreadId === thread.threadId ? 'Importing...' : 'Import Thread'}
-                      </button>
+                            {/* Nested Threads inside Organization */}
+                            {isExpanded && (
+                              <div className="divide-y divide-hairline border-t border-hairline">
+                                {group.threads.map((thread) => (
+                                  <div
+                                    key={thread.threadId}
+                                    className="p-3.5 pl-6 sm:pl-8 bg-paper-2/50 hover:bg-paper-2 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                                  >
+                                    <div className="space-y-1 min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-serif font-medium text-ink truncate text-xs sm:text-sm">
+                                          {thread.subject}
+                                        </span>
+                                        <span className="text-[10px] font-mono text-muted-ink px-1.5 py-0.2 bg-paper rounded border border-hairline whitespace-nowrap">
+                                          {thread.messageCount} msg{thread.messageCount > 1 ? 's' : ''}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs font-sans text-muted-ink line-clamp-2">
+                                        {thread.snippet}
+                                      </p>
+                                      <div className="text-[10px] font-mono text-muted-ink">
+                                        {new Date(thread.lastMessageAt).toLocaleDateString(undefined, {
+                                          year: 'numeric',
+                                          month: 'short',
+                                          day: 'numeric',
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      onClick={() => handleImportThread(thread.threadId)}
+                                      disabled={importingThreadId === thread.threadId}
+                                      className="bg-copper text-paper px-3.5 py-1.5 text-xs font-mono uppercase tracking-wider font-semibold rounded-sm hover:bg-umber transition-colors disabled:opacity-50 whitespace-nowrap self-start sm:self-center shadow-xs"
+                                    >
+                                      {importingThreadId === thread.threadId ? 'Importing...' : 'Import'}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  ) : (
+                    /* Mode 2: Flat List */
+                    <div className="space-y-2">
+                      {gmailThreads.map((thread) => (
+                        <div
+                          key={thread.threadId}
+                          className="p-4 bg-paper-2 border border-hairline hover:border-ink/30 transition-colors rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                        >
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-serif font-medium text-ink truncate text-sm">
+                                {thread.subject}
+                              </span>
+                              <span className="text-[10px] font-mono text-muted-ink px-1.5 py-0.5 bg-paper rounded border border-hairline whitespace-nowrap">
+                                {thread.messageCount} msg{thread.messageCount > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <p className="text-xs font-sans text-muted-ink line-clamp-2">
+                              {thread.snippet}
+                            </p>
+                            <div className="text-[11px] font-mono text-muted-ink">
+                              From: {thread.from} • {new Date(thread.lastMessageAt).toLocaleDateString()}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleImportThread(thread.threadId)}
+                            disabled={importingThreadId === thread.threadId}
+                            className="bg-copper text-paper px-4 py-2 text-xs font-mono uppercase tracking-wider font-semibold rounded-sm hover:bg-umber transition-colors disabled:opacity-50 whitespace-nowrap self-start sm:self-center shadow-xs"
+                          >
+                            {importingThreadId === thread.threadId ? 'Importing...' : 'Import Thread'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Cursor Pagination: Load More */}
                   {nextPageToken && (
