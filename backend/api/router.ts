@@ -1,6 +1,7 @@
 import type { RouteDef, HandlerContext, RouteUser, StandardErrorEnvelope } from './types';
 import { allRoutes } from './routes';
 import { createUserClient, getAdminClient } from './client';
+import { isDeletionPending } from '../account/deletionState';
 
 export type { RouteDef, HandlerContext, RouteUser, StandardErrorEnvelope } from './types';
 export { allRoutes } from './routes';
@@ -137,6 +138,26 @@ export async function route(
     }
   }
 
+  // 2b. Account deletion write freeze (Spec §15.5.1 D3)
+  // Once an active deletion request exists, every mutating route is blocked
+  // except the deletion endpoints themselves (which resume the state machine).
+  const admin = getAdminClient();
+  const isMutating = method !== 'GET' && method !== 'HEAD';
+  if (matchedRoute.auth === 'user' && isMutating && !matchedRoute.allowDuringDeletion) {
+    if (await isDeletionPending(admin, user.id)) {
+      const errorBody: StandardErrorEnvelope = {
+        error: {
+          code: 'ACCOUNT_DELETION_PENDING',
+          message: 'Account deletion is in progress; writes are frozen',
+        },
+      };
+      return new Response(JSON.stringify(errorBody), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
   // 3. Input Validation (if schema defined)
   if (matchedRoute.input) {
     try {
@@ -169,7 +190,6 @@ export async function route(
   // 4. Execute Route Handler
   try {
     const db = createUserClient(user.accessToken);
-    const admin = getAdminClient();
 
     const result = await matchedRoute.handler({
       req,

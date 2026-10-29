@@ -64,7 +64,7 @@ export default function CaseDashboardPage() {
     const interval = setInterval(async () => {
       try {
         const { run } = await api.analysis.getRun(activeRunId);
-        if (run.status === 'COMPLETED' || run.status === 'FAILED') {
+        if (run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'CANCELLED') {
           setActiveRunId(null);
           setAnalyzing(false);
           await loadData();

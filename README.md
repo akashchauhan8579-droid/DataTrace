@@ -4,7 +4,7 @@
 
 DataTrace turns fragmented privacy-related evidence (emails, documents, screenshots, requests, responses) into a preserved case record, structured intelligence, deterministically verified findings and an evidence-grounded action report.
 
-> **Status: live end-to-end (29 Oct 2026).** The full user-facing workflow is deployed at **https://data-trace-kappa.vercel.app**. [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) (**v1.4.2**) remains the target design. The frontend UI (Next.js 14), Gmail import, AI analysis (Groq multi-key pool), evidence safe-sizing, inline parallel task execution, and all six P0 verification rule modules are implemented and live. The checks currently passing are `npm test` (31 files, 362 tests) and `npm run typecheck`. Remaining partial features: Gmail OAuth production approval, screenshot OCR, and PDF export.
+> **Status: live end-to-end (30 Oct 2026).** The full user-facing workflow is deployed at **https://data-trace-kappa.vercel.app**. [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) (**v1.5.0**) is the target design. The frontend UI (Next.js 14), Gmail import, AI analysis (Groq multi-key pool), evidence safe-sizing, inline parallel task execution, all six P0 verification rule modules, and GDPR Art. 17 account deletion/export are implemented. The checks currently passing are `npm test` (43 files, 505 tests), `npm run typecheck`, and the frontend typecheck/tests. Remaining partial features: Gmail OAuth production approval, screenshot OCR, and PDF export.
 
 > *DataTrace identifies evidence-related gaps and prepares a reviewable draft; it does not determine legal compliance or provide legal advice.*
 
@@ -43,9 +43,10 @@ Two ideas carry the design:
 |---|---|
 | Contracts | TypeScript/Zod schemas for findings, citations, payloads, locators and reports, with unit tests. |
 | AI | Consent and minimization gateway, candidate citation resolver, mock provider, Grok and Groq provider adapters, and prompt registry. **Multi-key Groq pool** (`GROQ_API_KEYS`) with round-robin distribution and HTTP 429 auto-failover. **Safe-sizing minimizer** strips base64/binary blobs; hard 2,500-char per-segment and 16,000-char per-evidence caps prevent HTTP 413 errors. |
-| Ingestion and backend | SHA-256, `.eml` and PDF parsing, segmentation, API router/adapter, evidence and report routes, and an analysis worker. **Inline parallel execution** (`processRunInline`) runs all queued tasks via `Promise.all` inside the API route � no external worker needed on Vercel serverless. |
+| Ingestion and backend | SHA-256, `.eml` and PDF parsing, segmentation, API router/adapter, evidence and report routes, and an analysis worker. **Inline parallel execution** (`processRunInline`) runs all queued tasks via `Promise.all` inside the API route — no external worker needed on Vercel serverless. |
+| Account & data deletion (P1-B) | Dedicated `/account` UI for GDPR Art. 17 erasure and portability. `GET /api/account/export` builds a server-side JSON export with no secrets or binaries. `POST /api/account/deletion` re-authenticates the password, checks the exact phrase `DELETE MY ACCOUNT`, freezes mutating routes, cancels in-flight analysis, and runs a resumable six-stage purge (`REQUESTED` → `STORAGE_PURGED` → `GMAIL_REVOKED` → `DB_PURGED` → `AUTH_DELETED` → `COMPLETE`). `POST /api/account/deletion/continue` resumes after serverless timeouts. |
 | Verification | Six P0 rule modules and a deterministic verification engine. |
-| Database | Six SQL migrations are present. No pgTAP tests are currently checked in, so database security and migration acceptance gates remain unverified. |
+| Database | Ten SQL migration files are present (001–008c), including account-erasure tables/RPC and `CANCELLED` analysis statuses. Two pgTAP test files are checked in; database gates still need to be run against a live instance. |
 | Frontend and Gmail | Full Next.js 14 UI deployed and live. Gmail OAuth integration present but in Google Cloud Testing mode (only registered test users can sync). |
 
 The full end-to-end workflow is live and operational at https://data-trace-kappa.vercel.app. Remaining partial features: Gmail OAuth production approval, screenshot OCR pipeline, and 1-click PDF export.
@@ -65,9 +66,10 @@ The full end-to-end workflow is live and operational at https://data-trace-kappa
 | Tier | Contents | Status |
 |---|---|---|
 | **P0-Core** | Contracts, gateway, providers, ingestion, backend API/worker and six P0 rule modules. Full Next.js 14 frontend UI live. Multi-key Groq pool, safe-sizing, and inline parallel execution deployed. | **Complete & Live** |
-| **P0-Hardening** | SQL migrations include audit/invariant work, but there is no pgTAP suite and the database gates have not been validated in this checkout. | Partially implemented; unverified |
-| **P1-0** | Gmail import (§5.5 of the spec) | Not implemented |
+| **P0-Hardening** | SQL migrations include audit/invariant work and two pgTAP files are checked in, but the database gates have not been run in this checkout. | Partially implemented; unverified |
+| **P1-0** | Gmail import (§5.5 of the spec) | Implemented; OAuth app in Testing mode |
 | **P1-A** | Timeline, graph, friction signals, remaining P1 rules, exact-range highlighting, DOCX, screenshots and PDF export | Not implemented |
+| **P1-B** | GDPR Art. 17 account deletion, resumable purge state machine, anonymised erasure receipts and account JSON export | **Implemented** |
 | **P2** | Continuous Gmail sync, HTTP probes, DPO routing, DKIM verification, monitoring, personal-data map, DPDP pack and public deployment | Not implemented |
 
 Six P0 verification rule modules are present. The five P1 rules in the master spec are not implemented. See the implementation and test status above; passing unit tests do not establish the full release gates.
@@ -100,17 +102,17 @@ Handoff: Person 1 freezes the Zod contracts in Hour 0–1 and has the schema rea
                      citation resolution
 ```
 
-The current package is a strict TypeScript backend/test project using Supabase JS, Zod, `mailparser`, `pdf-parse`, Vitest and `tsx`. The Next.js UI, Tailwind, shadcn/ui, React Flow and pgTAP remain part of the target design, not installed or implemented in this checkout. AI providers are behind an `AIProvider` interface; the mock provider is available for tests.
+The repository contains a strict TypeScript backend/test project using Supabase JS, Zod, `mailparser`, `pdf-parse`, Vitest and `tsx`, plus a Next.js 14 frontend with Tailwind. shadcn/ui, React Flow and a configured pgTAP runner remain target design. AI providers are behind an `AIProvider` interface; the mock provider is available for tests.
 
 ## Repository layout (specified)
 
 ```text
-frontend/        API adapter; UI pages/components are not implemented  (Person 2)
-backend/         router, handlers, ingestion and worker                (Person 2)
+frontend/        Next.js 14 UI, API adapter, case and account pages     (Person 2)
+backend/         router, handlers, ingestion, account erasure, worker  (Person 2)
 ai/              Gateway, providers, prompts                            (Person 1)
 verification/    deterministic rules, no network, no AI imports         (Person 1)
 database/        security helpers incl. assertCaseOwner                 (Person 1)
-supabase/        migrations 001–006; pgTAP tests not yet present        (Person 1)
+supabase/        migrations 001–008c; two pgTAP test files              (Person 1)
 contracts/       shared Zod schemas and types (change protocol, §19.3)
 tests/           synthetic golden scenarios, fixtures, integration
 docs/            MASTER_SPEC.md, api.md, security.md, integration.md
@@ -126,28 +128,29 @@ npm test
 npm run typecheck
 ```
 
-Latest local result: **31 test files and 362 tests passed; typecheck passed**. The test suite uses synthetic/mock data. No pgTAP or browser/component tests are checked in. The live end-to-end workflow is verified on the production deployment at https://data-trace-kappa.vercel.app.
+Latest local result: **43 test files and 505 tests passed; backend and frontend typechecks passed**. The test suite uses synthetic/mock data. Two pgTAP test files are checked in but were not run in this checkout. The live end-to-end workflow is verified on the production deployment at https://data-trace-kappa.vercel.app.
 
 ## Testing
 
-Tests and fixtures use synthetic data. Vitest currently runs unit, gateway, backend and synthetic scenario tests (31 files, 362 tests). There are no component tests or pgTAP tests checked in; T24–T29 are not run because Gmail import is not implemented. The spec's twice-without-reset end-to-end demo gate has not been verified.
+Tests and fixtures use synthetic data. Vitest currently runs unit, gateway, backend, account-erasure and synthetic scenario tests (43 files, 505 tests), plus the frontend invariant tests. Two pgTAP files are checked in; they require a live Supabase/Postgres instance. The spec's twice-without-reset end-to-end demo gate has not been verified.
 
 ## Privacy and security status
 
 - The Gateway and resolver are implemented to minimize model input and resolve display-ID citations within task scope. These protections have unit tests; they do not replace database isolation tests.
 - SQL migrations are present, but client grants, RLS, storage bypass, audit-chain integrity and database invariants have not been verified with an automated pgTAP suite in this checkout.
-- Gmail token handling is not implemented because Gmail import is not implemented.
+- Gmail refresh tokens are encrypted server-side, never returned to clients, and revoked on disconnect or account deletion.
+- Account deletion requires server-side password re-authentication plus the exact confirmation phrase, freezes all other mutating routes while pending, and stores only an HMAC-SHA256 subject hash in its erasure receipt. The account export deliberately omits tokens, secrets and raw binaries.
 - SHA-256 indicates whether bytes changed since ingestion; it does not establish that evidence is authentic or true. Provider-side retention is outside DataTrace's control. See spec §15 for the target threat model and limitations.
 
 ## Third-party libraries and services
 
-Current package dependencies are listed in `package.json`: Supabase JS, Zod, `zod-to-json-schema`, `mailparser`, `pdf-parse`, Vitest, TypeScript and `tsx`. Grok and Groq adapters are present, but live provider use is not part of automated validation. Next.js, React, Gmail APIs and pgTAP are specified targets, not current package dependencies.
+Root and frontend dependencies are listed in their `package.json` files: Supabase JS/SSR, Zod, `zod-to-json-schema`, `mailparser`, `pdf-parse`, Vitest, TypeScript, `tsx`, Next.js, React and Tailwind. Grok and Groq adapters are present, but live provider use is not part of automated validation. Gmail uses Google OAuth in Testing mode; pgTAP is specified but its runner is not configured in this checkout.
 
 ## Documentation
 
 | File | Purpose |
 |---|---|
-| [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) | The single source of truth: architecture, schema, contracts, rules, delivery plan, tests (v1.4.2) |
+| [`docs/MASTER_SPEC.md`](docs/MASTER_SPEC.md) | The single source of truth: architecture, schema, contracts, rules, delivery plan, tests (v1.5.0) |
 | [`docs/integration.md`](docs/integration.md) | Implementation readiness board; some status entries need refresh against the current test run and modules. |
 
 Any change to architecture, schema, contract or scope is recorded in the spec in the same pull request (spec §19.3).

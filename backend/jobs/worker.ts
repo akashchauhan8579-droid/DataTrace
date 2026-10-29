@@ -138,9 +138,13 @@ export class AnalysisWorker {
     try {
       await this.processTask(task);
     } catch (error) {
-      const reason = errorMessage(error);
-      console.error(`[Worker] Task ${task.id} failed:`, reason);
-      await this.failTask(task, reason);
+      if (await this.isRunCancelled(task.run_id)) {
+        await this.cancelTask(task);
+      } else {
+        const reason = errorMessage(error);
+        console.error(`[Worker] Task ${task.id} failed:`, reason);
+        await this.failTask(task, reason);
+      }
     } finally {
       clearInterval(heartbeat);
     }
@@ -166,7 +170,7 @@ export class AnalysisWorker {
   private async processTask(task: QueuedTask): Promise<void> {
     const { data: run, error: runError } = await this.admin
       .from('analysis_runs')
-      .select('case_id')
+      .select('case_id, status')
       .eq('id', task.run_id)
       .single();
 
@@ -175,6 +179,12 @@ export class AnalysisWorker {
     }
     if (!run) {
       throw new Error(`Analysis run ${task.run_id} not found`);
+    }
+
+    // D3: a deletion in progress cancels the run; do no further provider work.
+    if (run.status === 'CANCELLED') {
+      await this.cancelTask(task);
+      return;
     }
 
     // Invariant §15.2: Verify active AI consent for this case before processing
@@ -303,6 +313,13 @@ export class AnalysisWorker {
     const computedHash = createHash('sha256').update(serializedOutput, 'utf8').digest('hex');
     if (computedHash !== result.output_sha256) {
       throw new Error(`Output hash mismatch! Expected=${result.output_sha256} Got=${computedHash}`);
+    }
+
+    // D3: re-check immediately before persisting any model output. The run may
+    // have been cancelled while the provider call was in flight.
+    if (await this.isRunCancelled(task.run_id)) {
+      await this.cancelTask(task);
+      return;
     }
 
     let insertedFindingIds: string[] = [];
@@ -509,6 +526,17 @@ export class AnalysisWorker {
       throw new Error(`Failed to claim tasks inline: ${claimError.message}`);
     }
 
+    // D3: the account deletion may have cancelled this run between queueing and
+    // claiming. Release the leases and stop before any provider call.
+    if (await this.isRunCancelled(runId)) {
+      await Promise.all(
+        tasks.map((task: any) =>
+          this.cancelTask({ ...task, claim_token: claimToken } as QueuedTask)
+        )
+      );
+      return { success: false, tasksProcessed: 0 };
+    }
+
     // Process tasks concurrently across the multi-key Groq pool
     await Promise.all(
       tasks.map(async (task: any) => {
@@ -516,6 +544,10 @@ export class AnalysisWorker {
         try {
           await this.processTask(queuedTask);
         } catch (err: unknown) {
+          if (await this.isRunCancelled(runId)) {
+            await this.cancelTask(queuedTask);
+            return;
+          }
           const reason = errorMessage(err);
           console.error(`[WorkerInline] Task ${task.id} failed:`, reason);
           await this.admin
@@ -534,6 +566,38 @@ export class AnalysisWorker {
 
     await this.finalizeRun(runId);
     return { success: true, tasksProcessed: tasks.length };
+  }
+
+  /** True when the run has been cancelled by an account deletion (D3). */
+  private async isRunCancelled(runId: string): Promise<boolean> {
+    const { data, error } = await this.admin
+      .from('analysis_runs')
+      .select('status')
+      .eq('id', runId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`[Worker] Failed to read run ${runId} cancellation state:`, error.message);
+      return false;
+    }
+    return data?.status === 'CANCELLED';
+  }
+
+  /** Moves a task to CANCELLED and releases its worker lease. */
+  private async cancelTask(task: QueuedTask): Promise<void> {
+    const { error } = await this.admin
+      .from('analysis_tasks')
+      .update({
+        status: 'CANCELLED',
+        claimed_at: null,
+        claim_token: null,
+        failure_reason: 'Account deletion in progress',
+      })
+      .eq('id', task.id);
+
+    if (error) {
+      console.error(`[Worker] Failed to cancel task ${task.id}:`, error.message);
+    }
   }
 
   private async finalizeRun(runId: string): Promise<void> {

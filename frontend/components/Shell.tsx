@@ -153,6 +153,17 @@ export function Shell({ currentCaseId, caseDisplayId, children }: ShellProps) {
           </div>
 
           <Link
+            href="/account"
+            className={`text-[11px] uppercase tracking-[0.14em] font-mono px-2.5 py-1 rounded-sm border transition-colors ${
+              pathname.startsWith('/account')
+                ? 'text-ink border-copper bg-paper-2'
+                : 'text-muted-ink hover:text-ink border-hairline hover:border-ink/40 bg-paper-2/50'
+            }`}
+          >
+            Account
+          </Link>
+
+          <Link
             href="/auth"
             className="text-[11px] uppercase tracking-[0.14em] font-mono text-muted-ink hover:text-ink px-2.5 py-1 rounded-sm border border-hairline hover:border-ink/40 transition-colors bg-paper-2/50"
           >

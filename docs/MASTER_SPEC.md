@@ -1,7 +1,7 @@
-# DataTrace — Master Specification v1.4.2
+# DataTrace — Master Specification v1.5.0
 
-> **Status:** **v1.4.2 is the implementation baseline.** It supersedes v1.4, v1.3, v1.2 and v1.1 (v1.1 itself superseded `DATATRACE_MASTER_SPEC_FINAL.md` and `DATATRACE_MASTER_SPEC_GITHUB_FINAL.md`).
-> **Continuity:** v1.4.2 keeps the architecture, invariants, rule semantics and scope tiers of v1.4. It makes three changes only: (1) **Gmail import** moves from P2 to **P1-0**, in a deliberately small, one-shot form (§5.5, §15.9, §17.3); (2) the build team is **two people**: the four ownership roles A–D are kept and mapped onto them, with a work division by area (§3); (3) the schedule, sleep rota, tests, gates and checklists are updated to match (§17, §18, §20–§22). See [Appendix C](#appendix-c--changelog).
+> **Status:** **v1.5.0 is the implementation baseline.** It supersedes v1.4.2, v1.4, v1.3, v1.2 and v1.1 (v1.1 itself superseded `DATATRACE_MASTER_SPEC_FINAL.md` and `DATATRACE_MASTER_SPEC_GITHUB_FINAL.md`).
+> **Continuity:** v1.5.0 keeps the architecture, invariants, rule semantics and scope tiers of v1.4.2. It adds **Account & Data Deletion (GDPR Art. 17)** and account export as tier **P1-B** (§9.3, §15.5, §15.7, §16). See [Appendix C](#appendix-c--changelog).
 > **Audience:** the two-person build team (Person 1 and Person 2, who together hold the four ownership roles A, B, C, D), the same 24-hour hackathon, plus reviewers and judges.
 > **Principle:** *AI proposes. Evidence supports. Deterministic logic verifies. DataTrace explains. The user decides what action to take.*
 > **Change rule:** any change to architecture, schema, contract, or scope is agreed and recorded in this file (see §19.3) before code is written.
@@ -1167,12 +1167,43 @@ CREATE TRIGGER trg_audit_chain BEFORE INSERT ON audit_events
   FOR EACH ROW EXECUTE FUNCTION public.audit_events_chain();
 
 CREATE FUNCTION public.audit_events_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN RAISE EXCEPTION 'audit_events is append-only'; END $$;
+BEGIN
+  -- v1.5.0 (P1-B): GDPR Art. 17 account purge exception (D1).
+  -- Only purge_user_account(user_id) sets datatrace.allow_audit_delete = 'true' locally within its transaction.
+  -- Plain DELETE by service_role (or any caller without the session flag) still fails.
+  IF TG_OP = 'DELETE' AND current_setting('datatrace.allow_audit_delete', true) = 'true' THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'audit_events is append-only';
+END $$;
 CREATE TRIGGER trg_audit_no_update BEFORE UPDATE OR DELETE ON audit_events
   FOR EACH ROW EXECUTE FUNCTION public.audit_events_immutable();
 CREATE TRIGGER trg_audit_no_truncate BEFORE TRUNCATE ON audit_events
   FOR EACH STATEMENT EXECUTE FUNCTION public.audit_events_immutable();
 REVOKE UPDATE, DELETE, TRUNCATE ON audit_events FROM PUBLIC, anon, authenticated, service_role;
+
+-- v1.5.0 (P1-B): Sole authorized account deletion procedure (D1).
+-- Runs as SECURITY DEFINER to purge audit rows, cases, and credentials for a deleted user.
+CREATE FUNCTION public.purge_user_account(p_user_id UUID)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_case RECORD;
+BEGIN
+  -- 1. Set transaction-local flag so trg_audit_no_update allows audit deletions in this transaction only
+  PERFORM set_config('datatrace.allow_audit_delete', 'true', true);
+
+  -- 2. Take the identical per-case advisory lock as audit_events_chain() for each case owned by the user
+  FOR v_case IN SELECT id FROM cases WHERE owner_id = p_user_id LOOP
+    PERFORM pg_advisory_xact_lock(hashtext(v_case.id::text));
+  END LOOP;
+
+  -- 3. Delete dependent rows in topological order (audit_events -> cases -> gmail_connections)
+  DELETE FROM audit_events WHERE case_id IN (SELECT id FROM cases WHERE owner_id = p_user_id);
+  DELETE FROM cases WHERE owner_id = p_user_id;
+  DELETE FROM gmail_connections WHERE user_id = p_user_id;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.purge_user_account(UUID) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.purge_user_account(UUID) TO service_role;
 
 CREATE FUNCTION public.verify_audit_chain(p_case UUID)
 RETURNS TABLE (intact BOOLEAN, first_broken_case_seq BIGINT) LANGUAGE plpgsql STABLE AS $$
@@ -1198,6 +1229,7 @@ END $$;
 
 **Audit coverage statement (use this wording, do not broaden it).** Every original-file download is audited (authorization, then URL issuance). Every read of an item's extracted content through the REST API is audited (`EVIDENCE_VIEWED`, `kind: CONTENT`). Direct database reads of derived tables (`evidence_artifacts`, `evidence_segments`, `findings`, ...) by the authenticated case owner are scoped by RLS but are **not** audited. DataTrace therefore never claims that "every evidence read is audited". If that claim is ever required, remove the client `SELECT` grant on the derived tables and serve all reads through the backend.
 
+**GDPR Art. 17 purge exception (v1.5.0, P1-B; D1).** While `audit_events` is strictly append-only during normal operation, GDPR Art. 17 right to erasure requires purging an account's data upon verified request. Only one `SECURITY DEFINER` function, `purge_user_account(user_id)`, may delete audit rows. It sets the transaction-local configuration flag `datatrace.allow_audit_delete = 'true'`, which `audit_events_immutable()` verifies before permitting `DELETE`, and takes the same per-case advisory transaction lock (`pg_advisory_xact_lock(hashtext(case_id::text))`) as `audit_events_chain()`. Plain `DELETE` as `service_role` without this transaction-local context continues to be rejected by the trigger.
 ---
 
 # 10. Contracts (Zod / TypeScript)
@@ -1897,11 +1929,43 @@ All lifecycle events are written to the hash-chained ledger (§9.3). Audit metad
 
 ## 15.5 Retention and deletion
 
-- Evidence is kept until the user deletes it. Case lifecycle is **archive, never delete**: no client can delete a case, and no `DELETE /api/cases/:id` endpoint exists. A full account purge is P2 and would be an operator action.
+- Evidence is kept until the user deletes it. Case lifecycle is **archive, never delete**: no client can delete a case, and no `DELETE /api/cases/:id` endpoint exists.
 - **Deleting an evidence item** (`DELETE /api/evidence/:id`, P1) is a soft delete: set `deleted_at`, remove the binary from Storage, remove its artifacts and segments, and keep a tombstone row (ID, display ID, SHA-256, size, deleted time) so audit references stay valid.
 - **Quarantine** (hash mismatch, P0) and **deletion** share one engine function (§12.4): citing findings become `UNVERIFIED` with `source_unavailable = TRUE` and are shown as "source no longer available"; they lose report eligibility; reports containing them revert to unvalidated; the event is audited.
 - Tests, demos and the repository use **synthetic data only**.
 
+### 15.5.1 Account & Data Deletion (GDPR Art. 17, P1-B, v1.5.0)
+
+A user may permanently delete their account and all associated data under GDPR Article 17 ("Right to Erasure"), with an optional server-built JSON export offered first. The deletion architecture is governed by eight approved decisions:
+
+1. **Purge authority & audit exception (D1).** Only one `SECURITY DEFINER` function, `purge_user_account(user_id)` (migration 007), is permitted to delete audit rows. It sets a transaction-local flag (`datatrace.allow_audit_delete = 'true'`) honoured by `trg_audit_no_update` and takes the same per-case advisory lock (`pg_advisory_xact_lock(hashtext(case_id::text))`) as the audit chain trigger for every case owned by the user. Plain `DELETE` as `service_role` must still fail (§9.3).
+2. **Resumable client-driven state machine (D2).** Deletion progress is tracked in `account_deletion_requests` (no foreign key to `auth.users`, allowing the request row to persist through auth user deletion):
+   $$\text{REQUESTED} \longrightarrow \text{STORAGE_PURGED} \longrightarrow \text{GMAIL_REVOKED} \longrightarrow \text{DB_PURGED} \longrightarrow \text{AUTH_DELETED} \longrightarrow \text{COMPLETE}$$
+   - `POST /api/account/deletion` creates the request and runs steps within a time budget.
+   - `POST /api/account/deletion/continue` resumes from the recorded state if execution is interrupted.
+   - Every step is idempotent. No Cron or background worker is required.
+3. **Write freeze & analysis drain (D3).** Once a request exists:
+   - All mutating API routes return `409 ACCOUNT_DELETION_PENDING`.
+   - The user's `RUNNING` analysis runs are set to `CANCELLED`.
+   - `processRunInline` checks the cancellation flag before each task and before persisting outputs.
+   - The coordinator waits out the serverless function maximum execution duration before executing `DB_PURGED`, guaranteeing all running pipelines have drained.
+4. **Confirmation & re-authentication (D4).** Deletion is irreversible. Initiation requires:
+   - Server-side password re-authentication (`REAUTH_FAILED` on failure).
+   - Typing the exact confirmation phrase `"DELETE MY ACCOUNT"` (`CONFIRMATION_MISMATCH` on failure) in one dialog.
+   - The dialog explicitly offers a full data export before deletion starts.
+5. **Final JSON export (D5).** Before deletion, the user can download a complete account export via `GET /api/account/export`. The backend builds a single JSON document containing:
+   - Profile metadata, cases, evidence metadata (original filename, SHA-256, size, MIME type, ingest source), evidence segments, findings, citations, reports, and audit events alongside each case's chain-head hash.
+   - Gmail connection status and linked address.
+   - **Exclusions:** Never tokens, secrets, encryption keys, or original file binaries. Nothing is retained server-side.
+6. **Erasure receipts & privacy (D6).** To prove erasure compliance without retaining personal data, `erasure_receipts` (no FK) records:
+   - An HMAC-SHA256 digest of the `user_id` keyed by server secret `ERASURE_RECEIPT_KEY`.
+   - A UTC timestamp and per-table deleted row counts (`cases`, `evidence_items`, `findings`, `reports`, `audit_events`).
+   - Zero PII is retained. The raw `user_id` on the `account_deletion_requests` row is set to `NULL` upon reaching `COMPLETE`.
+7. **Honest limits disclosure (D7).** The confirmation dialog and documentation state honest operational limits:
+   - *AI-provider retention:* Groq operates with Zero Data Retention (ZDR) enabled, but transit logs follow provider policy.
+   - *Downloaded files:* Files or reports previously downloaded by the user to their local environment cannot be revoked.
+   - *Backup aging:* Encrypted database backups age out according to standard retention schedules.
+   - *User mailbox:* Gmail messages and threads in the user's own mailbox remain untouched; only DataTrace's access token is revoked at Google and local connection rows dropped.
 ## 15.6 Jurisdictions and legal framing
 
 - MVP frameworks: **GDPR** (Arts. 12, 15, 16, 17) and **CCPA** (Cal. Civ. Code § 1798.100 et seq.). Deadlines used for `POSSIBLE_DELAY` live in `frameworks.ts` and must be verified by a human before the demo; an entry that has not been human-reviewed is not used (§14.1).
@@ -1932,6 +1996,12 @@ All lifecycle events are written to the hash-chained ledger (§9.3). Audit metad
 | OAuth callback forgery or code injection (P1-0) | HMAC-signed `state` bound to the user and expiring in 10 minutes, verified before the code is exchanged; the callback is an authenticated API call; §15.9, T24 |
 | Over-broad mailbox access (P1-0) | One read-only scope, enforced by a database CHECK and re-checked on the callback; the user picks one thread at a time; message cap per import; listed test accounts only (§5.5) |
 | A real inbox connected by mistake (P1-0) | The Testing-mode app admits only the two throwaway test users; the connect screen says "test accounts only"; principle 9 |
+| Unauthorized or accidental account deletion (P1-B) | Server-side password re-entry (`REAUTH_FAILED`), strict string verification of `"DELETE MY ACCOUNT"` (`CONFIRMATION_MISMATCH`), and export prompt in one dialog (§15.5, D4) |
+| In-flight writes or analysis corruption during deletion (P1-B) | Immediate write freeze (`ACCOUNT_DELETION_PENDING`), transition of `RUNNING` analysis runs to `CANCELLED`, pre-task and pre-persistence checks in `processRunInline`, and drain wait before `DB_PURGED` (§15.5, D3) |
+| Destruction of audit ledger via privilege escalation (P1-B) | Trigger `trg_audit_no_update` permits deletion only when transaction-local flag `datatrace.allow_audit_delete = 'true'` is set inside `SECURITY DEFINER purge_user_account()`; plain `DELETE` by `service_role` fails; advisory lock serializes per case (§9.3, D1) |
+| Serverless timeout during multi-step account purge (P1-B) | Resumable idempotent state machine in `account_deletion_requests` driven by client via `POST /api/account/deletion/continue`; steps execute within time budget without cron (§15.5, D2) |
+| PII retained in erasure audit trails (P1-B) | `erasure_receipts` table stores HMAC-SHA256 of `user_id` keyed by `ERASURE_RECEIPT_KEY`, timestamp, and table row counts; raw `user_id` on request row nulled at `COMPLETE` (§15.5, D6) |
+| Secret or raw binary leakage during account export (P1-B) | Server-built JSON export omits original binaries, access/refresh tokens, credentials, and secrets; streams directly to client with zero server-side storage (§15.5, D5) |
 
 Expand this table into `docs/security.md` during the build.
 
@@ -1978,7 +2048,7 @@ Person 1 designs these rules, Person 2 implements them, and Person 1 reviews the
 
 # 16. API Surface
 
-All endpoints live under `/api` and are served by the single adapter and router (§7.5). They require a valid Supabase access token (except `/api/health`), validate input and output with Zod, and return errors as `{ "error": { "code": string, "message": string } }`. Codes include `UNAUTHENTICATED` (401), `NOT_FOUND` (404), `VALIDATION` (400), `MALFORMED_PATH` (400), `AI_CONSENT_REQUIRED` (409), `EVIDENCE_QUARANTINED` (409), `GROUNDING_FAILED` (422), `GMAIL_NOT_CONNECTED` (409), `GMAIL_AUTH_EXPIRED` (409), `GMAIL_UPSTREAM` (502), `INTERNAL` (500). A resource owned by someone else returns `NOT_FOUND`. Names may follow framework conventions without changing the contracts.
+All endpoints live under `/api` and are served by the single adapter and router (§7.5). They require a valid Supabase access token (except `/api/health`), validate input and output with Zod, and return errors as `{ "error": { "code": string, "message": string } }`. Codes include `UNAUTHENTICATED` (401), `NOT_FOUND` (404), `VALIDATION` (400), `MALFORMED_PATH` (400), `CONFIRMATION_MISMATCH` (400), `REAUTH_FAILED` (401), `ACCOUNT_DELETION_PENDING` (409), `AI_CONSENT_REQUIRED` (409), `EVIDENCE_QUARANTINED` (409), `GROUNDING_FAILED` (422), `GMAIL_NOT_CONNECTED` (409), `GMAIL_AUTH_EXPIRED` (409), `GMAIL_UPSTREAM` (502), `INTERNAL` (500). A resource owned by someone else returns `NOT_FOUND`. Names may follow framework conventions without changing the contracts.
 
 | Method & path | Purpose | Tier |
 |---|---|---|
@@ -2009,6 +2079,9 @@ All endpoints live under `/api` and are served by the single adapter and router 
 | `GET /api/gmail/threads?q=&pageToken=` | Thread metadata for the picker (display only; nothing is stored) | P1-0 |
 | `POST /api/cases/:id/evidence/gmail` | Import a thread: `{ threadId }` → `{ items, truncated }`. Each message becomes an ordinary evidence item with `ingestSource = GMAIL_IMPORT`; writes `EVIDENCE_IMPORTED` per item | P1-0 |
 | `DELETE /api/gmail/connection` | Revoke at Google and delete the stored connection (deletes no evidence) | P1-0 |
+| `GET /api/account/export` | Download full account data export as server-built JSON (profile metadata, cases, evidence metadata, segments, findings, citations, reports, audit events + chain-head hash, Gmail status/address; no secrets or binaries) | P1-B |
+| `POST /api/account/deletion` | Initiate account deletion: `{ password, confirmationPhrase }`. Verifies credentials and phrase, freezes writes, sets running runs to `CANCELLED`, creates request row, and executes stages within time budget | P1-B |
+| `POST /api/account/deletion/continue` | Resume pending account deletion state machine (`STORAGE_PURGED` > `GMAIL_REVOKED` > `DB_PURGED` > `AUTH_DELETED` > `COMPLETE`). Idempotent; client-driven with no cron | P1-B |
 
 **Frontend integration instructions (Member A).** Use `apiFetch` for everything. To open an original file: `const { url } = await apiFetch('/evidence/:id/download'); window.open(url)`. Never build a Storage URL, import a Storage client for evidence, or query Postgres tables from components. Display `displayId` values as returned; never generate them. **Gmail (P1-0):** the `/gmail/callback` page forwards `code` and `state` with `apiFetch('/gmail/callback', …)` and then returns to the case; components never see a Google token and never call Google.
 
@@ -2587,7 +2660,23 @@ Numbers 1–53 keep the team's earlier numbering. **✎** marks a decision whose
 
 # Appendix C — Changelog
 
-## v1.4.2 (this version): changes from v1.4
+## v1.5.0 (this version): changes from v1.4.2
+
+v1.5.0 introduces Account & Data Deletion (GDPR Art. 17 right to erasure) and account data export as a P1-B feature (§15.5). Core case architecture, Gateway minimization, verification rules, and P0 invariants are **unchanged**.
+
+**Account & Data Deletion (P1-B)**
+- **Audit ledger purge exception (§9.3, D1):** `audit_events_immutable()` trigger updated to allow deletions only when transaction-local setting `datatrace.allow_audit_delete = 'true'` is active. Added `SECURITY DEFINER` function `purge_user_account(user_id)` which acquires per-case advisory locks (`hashtext(case_id::text)`), sets the transaction-local flag, purges case records and audit rows, and records an anonymous entry in `erasure_receipts`. Plain `DELETE` as `service_role` remains prohibited.
+- **Resumable deletion state machine (§15.5, D2):** Added table `account_deletion_requests` (no FK to `auth.users`) tracking stages: `REQUESTED` > `STORAGE_PURGED` > `GMAIL_REVOKED` > `DB_PURGED` > `AUTH_DELETED` > `COMPLETE`. Driven by client requests without cron dependencies: `POST /api/account/deletion` initiates within a serverless time budget, and `POST /api/account/deletion/continue` resumes idempotent stages.
+- **Write freeze & pipeline drain (§15.5, D3):** Active deletion request blocks mutating routes with `ACCOUNT_DELETION_PENDING` (409), cancels `RUNNING` analysis runs, and `processRunInline` checks the cancellation flag before tasks and persistence. Purge coordinator waits out maximum function duration before `DB_PURGED`.
+- **Confirmation dialog & export offer (§15.5, D4, D5):** Deletion requires re-authentication via password verification and typing the exact phrase `"DELETE MY ACCOUNT"` in a single dialog. The dialog offers a full JSON export first. `GET /api/account/export` streams structured JSON containing cases, evidence metadata, segments, findings, citations, reports, audit events, and Gmail status, strictly excluding tokens and raw binaries.
+- **Erasure receipts & privacy (§15.5, D6):** Added `erasure_receipts` table storing HMAC-SHA256 of the user ID (keyed by `ERASURE_RECEIPT_KEY`), timestamp, and per-table row counts with zero PII. The raw `user_id` on `account_deletion_requests` is nulled at `COMPLETE`.
+- **Honest limits disclosure (§15.5, D7):** Documented honest limits covering Groq AI provider retention (ZDR enabled), already-downloaded local files, expiring database backups, and user mailbox contents.
+- **API Surface & Errors (§16):** Added routes `GET /api/account/export`, `POST /api/account/deletion`, and `POST /api/account/deletion/continue`. Added error codes `ACCOUNT_DELETION_PENDING` (409), `CONFIRMATION_MISMATCH` (400), and `REAUTH_FAILED` (401).
+- **Threat model (§15.7):** Added threat model entries for account deletion abuse, deletion concurrency/drain, audit purge escalation, serverless timeouts, PII leakage in receipts, and export secrets.
+
+---
+
+## v1.4.2 (previous version): changes from v1.4
 
 v1.4.2 promotes one feature and re-assigns the work. Architecture, invariants, rule semantics, P0 scope and the P0-Core / P0-Hardening split are **unchanged**. A reviewer comparing with v1.4 should find differences only in the items below.
 
@@ -2792,4 +2881,4 @@ Tick every box before declaring v1.4.2 frozen (target: end of Hour 1 for contrac
 
 ---
 
-*DataTrace Master Specification v1.4.2: implementation baseline. Supersedes v1.4, v1.3, v1.2 and v1.1.*
+*DataTrace Master Specification v1.5.0: implementation baseline. Supersedes v1.4.2, v1.4, v1.3, v1.2 and v1.1.*

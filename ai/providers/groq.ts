@@ -32,9 +32,9 @@ export function createGroqProvider(options: CreateGroqProviderOptions): AIProvid
     return {
       async analyze() {
         throw new ProviderError(
+          'BAD_REQUEST',
           'AI_PROVIDER=groq requires at least one GROQ_API_KEY or GROQ_API_KEYS configured.',
-          'CONFIG_ERROR',
-          { provider: 'groq' }
+          false
         );
       },
       async healthCheck() {

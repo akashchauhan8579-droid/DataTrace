@@ -22,6 +22,11 @@ export interface RouteDef {
   auth: 'user' | 'none';    // only /health is 'none'
   input?: ZodTypeAny;       // Zod input schema for body or query
   output?: ZodTypeAny;      // Zod output schema
+  /**
+   * When true, this mutating route is allowed while an account deletion is
+   * pending. Only the account deletion endpoints set this (Spec §15.5.1 D3).
+   */
+  allowDuringDeletion?: boolean;
   handler: (ctx: HandlerContext) => Promise<unknown | Response>;
 }
 

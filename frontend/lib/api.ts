@@ -78,6 +78,8 @@ import type {
   AuditEvent,
   UploadEvidenceInput,
   ReportContent,
+  AccountExport,
+  DeletionStatus,
 } from './types';
 
 // Cases
@@ -213,5 +215,17 @@ export const api = {
       }),
     disconnect: () =>
       apiFetch<{ disconnected: boolean }>('gmail/connection', { method: 'DELETE' }),
+  },
+
+  // Account & Data Deletion (GDPR Art. 17, Spec §15.5.1)
+  account: {
+    exportData: () => apiFetch<AccountExport>('account/export'),
+    initiateDeletion: (body: { password: string; confirmationPhrase: string }) =>
+      apiFetch<DeletionStatus>('account/deletion', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    continueDeletion: () =>
+      apiFetch<DeletionStatus>('account/deletion/continue', { method: 'POST' }),
   },
 };

@@ -117,8 +117,8 @@ export interface Finding {
 }
 
 // ─── Analysis ─────────────────────────────────────────────────────────────────
-export type AnalysisRunStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
-export type TaskStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+export type AnalysisRunStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type TaskStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 export interface AnalysisTask {
   id: string;
@@ -239,6 +239,50 @@ export interface AuditEvent {
   prev_hash?: string | null;
   row_hash?: string | null;
   chain_hash?: string | null;
+}
+
+// ─── Account & Data Deletion (GDPR Art. 17, Spec §15.5.1) ────────────────────
+export type AccountDeletionState =
+  | 'REQUESTED'
+  | 'STORAGE_PURGED'
+  | 'GMAIL_REVOKED'
+  | 'DB_PURGED'
+  | 'AUTH_DELETED'
+  | 'COMPLETE';
+
+export interface DeletionStatus {
+  id: string;
+  userId?: string | null;
+  state: AccountDeletionState;
+  subjectHash: string;
+  attempts: number;
+  lastError?: string | null;
+  counts: Record<string, number>;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+}
+
+export interface AccountExport {
+  exportedAt: string;
+  specVersion: '1.5.0';
+  profile: {
+    id: string;
+    email?: string | null;
+    createdAt?: string | null;
+  };
+  cases: unknown[];
+  evidence: unknown[];
+  segments: unknown[];
+  findings: unknown[];
+  citations: unknown[];
+  reports: unknown[];
+  audit: unknown[];
+  gmail: {
+    connected: boolean;
+    googleEmail?: string | null;
+    status?: 'ACTIVE' | 'EXPIRED' | null;
+  };
 }
 
 // ─── API Error Envelope ───────────────────────────────────────────────────────

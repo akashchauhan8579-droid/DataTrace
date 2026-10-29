@@ -8,6 +8,7 @@ import { matrixRoutes } from './routes/matrix';
 import { reportsRoutes } from './routes/reports';
 import { auditRoutes } from './routes/audit';
 import { gmailRoutes } from './routes/gmail';
+import { accountRoutes } from './routes/account';
 
 export const allRoutes: RouteDef[] = [
   healthRoute,
@@ -19,4 +20,5 @@ export const allRoutes: RouteDef[] = [
   ...reportsRoutes,
   ...auditRoutes,
   ...gmailRoutes,
+  ...accountRoutes,
 ];
