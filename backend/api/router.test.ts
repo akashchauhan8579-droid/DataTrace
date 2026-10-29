@@ -193,6 +193,7 @@ describe('Master API Router (Member B - Spec v1.4 §7.5, §16)', () => {
         { method: 'GET',  slug: ['cases', 'test-case-id', 'matrix'] },
         { method: 'PUT',  slug: ['reports', 'test-report-id'] },
         { method: 'POST', slug: ['reports', 'test-report-id', 'validate'] },
+        { method: 'POST', slug: ['reports', 'test-report-id', 'dispatch'] },
         { method: 'GET',  slug: ['reports', 'test-report-id', 'export'] },
       ];
 

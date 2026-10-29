@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { Report, Finding, ValidationDetails } from '../lib/types';
 import { ReportBlock } from './ReportBlock';
+import { DpoDispatchModal } from './DpoDispatchModal';
 
 interface ReportEditorProps {
   report: Report;
@@ -10,6 +11,7 @@ interface ReportEditorProps {
   onSave: (updatedReport: Report) => Promise<void>;
   onValidate: () => Promise<ValidationDetails>;
   onExport: () => Promise<void>;
+  caseDisplayId?: string;
   saving?: boolean;
   validating?: boolean;
 }
@@ -20,6 +22,7 @@ export function ReportEditor({
   onSave,
   onValidate,
   onExport,
+  caseDisplayId,
   saving,
   validating,
 }: ReportEditorProps) {
@@ -33,6 +36,9 @@ export function ReportEditor({
   const [showAddAssertion, setShowAddAssertion] = useState(false);
   const [assertionText, setAssertionText] = useState('');
   const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
+
+  // Dispatch modal state
+  const [showDispatchModal, setShowDispatchModal] = useState(false);
 
   // Add user note state
   const [showAddNote, setShowAddNote] = useState(false);
@@ -149,6 +155,14 @@ export function ReportEditor({
           >
             Export Markdown ↓
           </button>
+          <button
+            onClick={() => setShowDispatchModal(true)}
+            disabled={!validationPassed}
+            title={!validationPassed ? 'Validation must pass before preparing an email' : 'Prepare a verified report email for the DPO'}
+            className="px-3 py-1.5 bg-ink text-paper text-xs font-mono uppercase tracking-wider rounded-sm hover:bg-neutral-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Prepare Email for DPO ✉
+          </button>
         </div>
       </div>
 
@@ -217,6 +231,7 @@ export function ReportEditor({
                     );
                   })
                 )}
+
               </div>
             </div>
 
@@ -277,6 +292,23 @@ export function ReportEditor({
             </div>
           </div>
         </div>
+      )}
+
+      {/* DPO Email Dispatcher Modal */}
+      {showDispatchModal && (
+        <DpoDispatchModal
+          report={report}
+          caseDisplayId={caseDisplayId}
+          suggestedEmails={Array.from(
+            new Set(
+              findings
+                .map((f) => f.statement.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g))
+                .filter(Boolean)
+                .flat()
+            )
+          ) as string[]}
+          onClose={() => setShowDispatchModal(false)}
+        />
       )}
     </div>
   );

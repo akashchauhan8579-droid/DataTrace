@@ -29,7 +29,7 @@ Evidence in (upload · manual log · Gmail import)
   → deterministic rules check citations, provenance and claims; only code changes a verification state
   → timeline · graph · request-response matrix · finding queues
   → grounded case report (Evidence / Findings / Complaint lens), exported as Markdown or JSON
-  → the user reviews, edits and decides
+  → the user reviews, edits and decides; a validated report can be prepared for manual email dispatch
 ```
 
 Two ideas carry the design:
@@ -48,6 +48,7 @@ Two ideas carry the design:
 | Verification | Six P0 rule modules and a deterministic verification engine. |
 | Database | Ten SQL migration files are present (001–008c), including account-erasure tables/RPC and `CANCELLED` analysis statuses. Two pgTAP test files are checked in; database gates still need to be run against a live instance. |
 | Frontend and Gmail | Full Next.js 14 UI deployed and live. Gmail OAuth integration present but in Google Cloud Testing mode (only registered test users can sync). |
+| Report email handoff | Validated reports can be prepared as a prefilled email with the audit-chain head hash and a dispatch audit event. The user reviews and sends it from their own email client; DataTrace does not send email directly. |
 
 The full end-to-end workflow is live and operational at https://data-trace-kappa.vercel.app. Remaining partial features: Gmail OAuth production approval, screenshot OCR pipeline, and 1-click PDF export.
 
@@ -69,8 +70,12 @@ The full end-to-end workflow is live and operational at https://data-trace-kappa
 | **P0-Hardening** | SQL migrations include audit/invariant work and two pgTAP files are checked in, but the database gates have not been run in this checkout. | Partially implemented; unverified |
 | **P1-0** | Gmail import (§5.5 of the spec) | Implemented; OAuth app in Testing mode |
 | **P1-A** | Timeline, graph, friction signals, remaining P1 rules, exact-range highlighting, DOCX, screenshots and PDF export | Not implemented |
+<<<<<<< HEAD
 | **P1-B** | GDPR Art. 17 account deletion, resumable purge state machine, anonymised erasure receipts and account JSON export | **Implemented** |
 | **P2** | Continuous Gmail sync, HTTP probes, DPO routing, DKIM verification, monitoring, personal-data map, DPDP pack and public deployment | Not implemented |
+=======
+| **P2** | Continuous Gmail sync, HTTP probes, DPO directory routing, server-side email delivery, DKIM verification, monitoring, personal-data map, DPDP pack and public deployment | Not implemented |
+>>>>>>> origin/feat/email-dispatch
 
 Six P0 verification rule modules are present. The five P1 rules in the master spec are not implemented. See the implementation and test status above; passing unit tests do not establish the full release gates.
 

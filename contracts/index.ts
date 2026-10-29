@@ -9,3 +9,4 @@ export * from './schemas/reports';
 export * from './schemas/frameworks';
 export * from './schemas/gmail';
 export * from './schemas/account';
+export * from './schemas/dispatch';
