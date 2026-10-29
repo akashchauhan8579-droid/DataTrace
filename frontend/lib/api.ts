@@ -1,5 +1,6 @@
 import { createClient } from './supabase';
 import { ApiResponseError } from './types';
+import type { DispatchEmailOutput } from '../../contracts';
 
 /**
  * apiFetch — the single gateway for all backend calls.
@@ -169,6 +170,20 @@ export const api = {
       apiFetch<{ reportId: string; markdown: string; json: unknown; exportedAt: string }>(
         `reports/${reportId}/export`
       ),
+    dispatch: (
+      reportId: string,
+      body: {
+        recipientEmail: string;
+        recipientName?: string;
+        subject: string;
+        coverNote?: string;
+        includeAuditSummary?: boolean;
+      }
+    ) =>
+      apiFetch<DispatchEmailOutput>(`reports/${reportId}/dispatch`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
   },
 
   audit: {

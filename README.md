@@ -29,7 +29,7 @@ Evidence in (upload · manual log · Gmail import)
   → deterministic rules check citations, provenance and claims; only code changes a verification state
   → timeline · graph · request-response matrix · finding queues
   → grounded case report (Evidence / Findings / Complaint lens), exported as Markdown or JSON
-  → the user reviews, edits and decides
+  → the user reviews, edits and decides; a validated report can be prepared for manual email dispatch
 ```
 
 Two ideas carry the design:
@@ -43,10 +43,11 @@ Two ideas carry the design:
 |---|---|
 | Contracts | TypeScript/Zod schemas for findings, citations, payloads, locators and reports, with unit tests. |
 | AI | Consent and minimization gateway, candidate citation resolver, mock provider, Grok and Groq provider adapters, and prompt registry. **Multi-key Groq pool** (`GROQ_API_KEYS`) with round-robin distribution and HTTP 429 auto-failover. **Safe-sizing minimizer** strips base64/binary blobs; hard 2,500-char per-segment and 16,000-char per-evidence caps prevent HTTP 413 errors. |
-| Ingestion and backend | SHA-256, `.eml` and PDF parsing, segmentation, API router/adapter, evidence and report routes, and an analysis worker. **Inline parallel execution** (`processRunInline`) runs all queued tasks via `Promise.all` inside the API route � no external worker needed on Vercel serverless. |
+| Ingestion and backend | SHA-256, `.eml` and PDF parsing, segmentation, API router/adapter, evidence and report routes, and an analysis worker. **Inline parallel execution** (`processRunInline`) runs all queued tasks via `Promise.all` inside the API route � no external worker needed on Vercel serverless. |
 | Verification | Six P0 rule modules and a deterministic verification engine. |
 | Database | Six SQL migrations are present. No pgTAP tests are currently checked in, so database security and migration acceptance gates remain unverified. |
 | Frontend and Gmail | Full Next.js 14 UI deployed and live. Gmail OAuth integration present but in Google Cloud Testing mode (only registered test users can sync). |
+| Report email handoff | Validated reports can be prepared as a prefilled email with the audit-chain head hash and a dispatch audit event. The user reviews and sends it from their own email client; DataTrace does not send email directly. |
 
 The full end-to-end workflow is live and operational at https://data-trace-kappa.vercel.app. Remaining partial features: Gmail OAuth production approval, screenshot OCR pipeline, and 1-click PDF export.
 
@@ -68,7 +69,7 @@ The full end-to-end workflow is live and operational at https://data-trace-kappa
 | **P0-Hardening** | SQL migrations include audit/invariant work, but there is no pgTAP suite and the database gates have not been validated in this checkout. | Partially implemented; unverified |
 | **P1-0** | Gmail import (§5.5 of the spec) | Not implemented |
 | **P1-A** | Timeline, graph, friction signals, remaining P1 rules, exact-range highlighting, DOCX, screenshots and PDF export | Not implemented |
-| **P2** | Continuous Gmail sync, HTTP probes, DPO routing, DKIM verification, monitoring, personal-data map, DPDP pack and public deployment | Not implemented |
+| **P2** | Continuous Gmail sync, HTTP probes, DPO directory routing, server-side email delivery, DKIM verification, monitoring, personal-data map, DPDP pack and public deployment | Not implemented |
 
 Six P0 verification rule modules are present. The five P1 rules in the master spec are not implemented. See the implementation and test status above; passing unit tests do not establish the full release gates.
 

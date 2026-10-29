@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { RouteDef } from '../types';
 import { validateReport } from '../../../verification/rules/reportGrounding';
 import type { FindingView } from '../../../verification/types';
+import { DispatchEmailInputSchema, DispatchEmailOutputSchema } from '../../../contracts';
+import { createEmailDispatcher } from '../../integrations/emailDispatcher';
 
 export const DraftReportInputSchema = z.object({
   lens: z.enum(['EVIDENCE', 'FINDINGS', 'COMPLAINT']).default('EVIDENCE'),
@@ -268,6 +270,172 @@ export const reportsRoutes: RouteDef[] = [
         reportId: report.id,
         validationStatus,
         details: validation,
+      };
+    },
+  },
+
+
+  // Dispatch report via email to DPO / Grievance Officer (§14.4 fail-closed if ungrounded)
+  {
+    method: 'POST',
+    pattern: '/reports/:id/dispatch',
+    auth: 'user',
+    input: DispatchEmailInputSchema,
+    output: DispatchEmailOutputSchema,
+    handler: async ({ user, db, admin, params, req }) => {
+      const body = await req.json();
+      const input = DispatchEmailInputSchema.parse(body);
+
+      const { data: report, error: reportError } = await db
+        .from('case_reports')
+        .select('*, cases!inner(id, owner_id, display_id)')
+        .eq('id', params.id)
+        .maybeSingle();
+
+      if (reportError) {
+        throw new Error(`Failed to load report for dispatch: ${reportError.message}`);
+      }
+
+      if (!report || (report.cases as any)?.owner_id !== user.id) {
+        return new Response(
+          JSON.stringify({ error: { code: 'NOT_FOUND', message: `Report ${params.id} not found` } }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Load findings to check grounding
+      const { data: rawFindings, error: findingsError } = await db
+        .from('findings')
+        .select('id, case_id, display_id, finding_type, evidence_basis, verification_state, source_unavailable, statement, structured_payload')
+        .eq('case_id', report.case_id);
+
+      if (findingsError) {
+        throw new Error(`Failed to load findings for report dispatch: ${findingsError.message}`);
+      }
+
+      const findingsList: FindingView[] = (rawFindings || []).map((f: any) => ({
+        id: f.id,
+        caseId: f.case_id,
+        displayId: f.display_id,
+        findingType: f.finding_type,
+        evidenceBasis: f.evidence_basis,
+        verificationState: f.verification_state,
+        sourceUnavailable: !!f.source_unavailable,
+        statement: f.statement,
+        structuredPayload: f.structured_payload,
+        citations: [],
+      }));
+
+      // Strict fail-closed grounding check
+      const validation = validateReport(report.content as any, findingsList);
+      if (validation.status !== 'VALIDATED') {
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: 'REPORT_UNGROUNDED',
+              message: 'Dispatch blocked: report contains ungrounded assertions without verified citations.',
+              failingBlockIds: validation.failingBlockIds,
+            },
+          }),
+          { status: 409, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const content = report.content as any;
+      const blocks: any[] = content?.blocks || [];
+      const findingDisplayIds = new Map(findingsList.map((finding) => [finding.id, finding.displayId]));
+
+      let markdown = `# DataTrace Case Report — ${report.active_lens || 'EVIDENCE'} Lens\n\n`;
+      markdown += `**Report ID:** \`${report.id}\` | **Case:** \`${(report.cases as any)?.display_id || report.case_id}\`\n\n---\n\n`;
+
+      for (const block of blocks) {
+        if (block.kind === 'heading') {
+          markdown += `## ${block.text || ''}\n\n`;
+        } else if (block.kind === 'notice') {
+          markdown += `> ${block.text || ''}\n\n`;
+        } else if (block.kind === 'assertion') {
+          const cites = (block.findingIds || [])
+            .map((id: string) => `[Finding ${findingDisplayIds.get(id) || id.slice(0, 8)}]`)
+            .join(' ');
+          markdown += `${block.text || ''} ${cites}\n\n`;
+        } else if (block.kind === 'user_note') {
+          markdown += `*Author's statement (not evidence-backed):* ${block.notes || block.text || ''}\n\n`;
+        } else {
+          markdown += `${block.text || ''}\n\n`;
+        }
+      }
+
+      // Fetch audit head hash if requested
+      let auditHeadHash: string | undefined;
+      if (input.includeAuditSummary) {
+        const { data: latestAudit, error: auditHeadError } = await admin
+          .from('audit_events')
+          .select('row_hash')
+          .eq('case_id', report.case_id)
+          .order('case_seq', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (auditHeadError) {
+          throw new Error(`Failed to load audit chain head for report dispatch: ${auditHeadError.message}`);
+        }
+
+        auditHeadHash = latestAudit?.row_hash;
+      }
+
+      const dispatcher = createEmailDispatcher();
+      const dispatchRes = await dispatcher.send({
+        recipientEmail: input.recipientEmail,
+        recipientName: input.recipientName,
+        subject: input.subject,
+        coverNote: input.coverNote,
+        markdownBody: markdown,
+        caseId: report.case_id,
+        caseDisplayId: (report.cases as any)?.display_id,
+        reportId: report.id,
+        auditHeadHash,
+      });
+
+      const auditAction =
+        dispatchRes.status === 'SENT'
+          ? 'REPORT_DISPATCHED'
+          : dispatchRes.status === 'FAILED'
+            ? 'REPORT_DISPATCH_FAILED'
+            : 'REPORT_EMAIL_PREPARED';
+
+      // Keep direct delivery, preparation, and failure distinct in the audit ledger.
+      const recipientDomain = input.recipientEmail.split('@')[1] || 'unknown';
+      const { data: auditEvent, error: auditInsertError } = await admin
+        .from('audit_events')
+        .insert({
+          case_id: report.case_id,
+          actor_type: 'USER',
+          actor_id: user.id,
+          entity_type: 'REPORT',
+          entity_id: report.id,
+          action: auditAction,
+          metadata: {
+            dispatchId: dispatchRes.dispatchId,
+            status: dispatchRes.status,
+            recipientDomain,
+            lens: report.active_lens,
+          },
+        })
+        .select('id')
+        .single();
+
+      if (auditInsertError || !auditEvent) {
+        throw new Error(`Failed to record report dispatch: ${auditInsertError?.message || 'Audit event was not returned'}`);
+      }
+
+      return {
+        dispatchId: dispatchRes.dispatchId,
+        status: dispatchRes.status,
+        dispatchedAt: dispatchRes.dispatchedAt,
+        recipientEmail: dispatchRes.recipientEmail,
+        subject: dispatchRes.subject,
+        auditRowId: auditEvent.id,
+        mailtoUrl: dispatchRes.mailtoUrl,
       };
     },
   },
