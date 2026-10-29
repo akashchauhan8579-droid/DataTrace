@@ -271,18 +271,26 @@ export class AnalysisWorker {
         foundSegmentOrdinals.set(evidence.display_id, foundOrdinals);
       }
 
+      let hasValidSegment = false;
       for (const scope of requestedScope) {
         const found = foundSegmentOrdinals.get(scope.evidenceDisplayId);
         if (!found || found.size === 0) {
-          throw new Error(`No eligible segments found for scoped evidence ${scope.evidenceDisplayId}`);
+          console.warn(`[Worker] Scoped evidence ${scope.evidenceDisplayId} has no locatable segments, skipping.`);
+          continue;
         }
 
         const missingOrdinal = scope.segmentOrdinals?.find((ordinal) => !found.has(ordinal));
         if (missingOrdinal !== undefined) {
-          throw new Error(
-            `Scoped segment ${scope.evidenceDisplayId}#${missingOrdinal} was not found or is unavailable`
+          console.warn(
+            `[Worker] Scoped segment ${scope.evidenceDisplayId}#${missingOrdinal} was not found, skipping.`
           );
+          continue;
         }
+        hasValidSegment = true;
+      }
+
+      if (!hasValidSegment && requestedScope.length > 0) {
+        throw new Error('No eligible segments found across any scoped evidence items');
       }
     }
 
@@ -479,7 +487,7 @@ export class AnalysisWorker {
       .from('analysis_tasks')
       .select('*')
       .eq('run_id', runId)
-      .eq('status', 'QUEUED');
+      .in('status', ['QUEUED', 'RUNNING']);
 
     if (error || !tasks || tasks.length === 0) {
       return { success: false, tasksProcessed: 0 };
@@ -510,7 +518,16 @@ export class AnalysisWorker {
         } catch (err: unknown) {
           const reason = errorMessage(err);
           console.error(`[WorkerInline] Task ${task.id} failed:`, reason);
-          await this.failTask(queuedTask, reason);
+          await this.admin
+            .from('analysis_tasks')
+            .update({
+              status: 'FAILED',
+              retry_count: MAX_RETRIES,
+              failure_reason: reason,
+              claimed_at: null,
+              claim_token: null,
+            })
+            .eq('id', task.id);
         }
       })
     );

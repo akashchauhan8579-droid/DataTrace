@@ -438,9 +438,25 @@ export const analysisRoutes: RouteDef[] = [
         throw new Error(`Failed to record analysis run audit event: ${auditError.message}`);
       }
 
+      // Execute tasks inline in parallel across the multi-key Groq pool
+      // so analysis completes immediately on Vercel without an external worker daemon
+      let finalStatus = run.status;
+      if (process.env.NODE_ENV !== 'test') {
+        try {
+          const { AnalysisWorker } = await import('../../jobs/worker');
+          const inlineWorker = new AnalysisWorker();
+          const inlineRes = await inlineWorker.processRunInline(run.id);
+          if (inlineRes.success) {
+            finalStatus = 'COMPLETED';
+          }
+        } catch (inlineErr: any) {
+          console.error('[AnalysisRunInline] Error executing tasks inline:', inlineErr?.message || inlineErr);
+        }
+      }
+
       return {
         runId: run.id,
-        status: run.status,
+        status: finalStatus,
         taskCount: createdTasks?.length || 0,
         tasks: createdTasks || [],
       };

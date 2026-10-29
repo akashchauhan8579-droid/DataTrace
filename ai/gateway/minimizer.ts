@@ -1,5 +1,5 @@
-import type { ScopeMap } from './scope.js';
-import { scopeKey } from './scope.js';
+import type { ScopeMap } from './scope';
+import { scopeKey } from './scope';
 
 export type MinimizationMode = 'MINIMIZE' | 'REDACT' | 'RAW' | 'LOCAL_ONLY';
 

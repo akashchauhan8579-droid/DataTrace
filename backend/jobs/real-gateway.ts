@@ -59,7 +59,7 @@ export class RealGatewayAdapter implements AIGatewayInterface {
       if (provider === 'groq') {
         const apiKey = (process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY)?.trim();
         if (!apiKey) {
-          throw new Error('AI_PROVIDER=groq requires GROQ_API_KEY or GROQ_API_KEYS to be configured.');
+          throw new Error('AI_PROVIDER=groq requires GROQ_API_KEY to be configured.');
         }
         this.provider = createGroqProvider({
           apiKey,

@@ -1,4 +1,4 @@
-import type { Result } from '../../contracts/result.js';
+import type { Result } from '../../contracts/result';
 
 export interface Consent {
   policyVersion: string;

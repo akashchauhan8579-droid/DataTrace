@@ -29,7 +29,22 @@ export function createGroqProvider(options: CreateGroqProviderOptions): AIProvid
   const allKeys = Array.from(new Set([...directKeys, ...parsedEnvKeys]));
 
   if (allKeys.length === 0) {
-    throw new Error('AI_PROVIDER=groq requires at least one GROQ_API_KEY or GROQ_API_KEYS configured.');
+    return {
+      async analyze() {
+        throw new ProviderError(
+          'AI_PROVIDER=groq requires at least one GROQ_API_KEY or GROQ_API_KEYS configured.',
+          'CONFIG_ERROR',
+          { provider: 'groq' }
+        );
+      },
+      async healthCheck() {
+        return {
+          available: false,
+          model: options.model || 'qwen/qwen3.8-27b',
+          capabilities: { vision: false },
+        };
+      },
+    };
   }
 
   // 2. Pre-create underlying providers for each key
