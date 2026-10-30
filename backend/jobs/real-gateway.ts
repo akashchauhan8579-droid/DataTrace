@@ -172,35 +172,103 @@ export class RealGatewayAdapter implements AIGatewayInterface {
       getPrompt(promptId, promptVersion) ??
       getPrompt(task.task_type, 'v1');
 
-    // Build rendered prompt using MINIMIZED scope, never raw evidence text
-    const renderedPrompt = promptDef
-      ? promptDef.build({ scope: minimizedScope })
-      : {
-          system: 'You are an extraction engine for DataTrace.',
-          user: `Task: extract candidate findings from ${minimizedScope.length} minimized evidence items.`,
+    // 4. Batch segments if needed to respect model token limits (e.g. Groq 7,000 ITPM)
+    const CHUNK_SIZE = 80;
+
+    // Flatten all segments with their evidenceDisplayId
+    const flatSegments: Array<{
+      evidenceDisplayId: string;
+      segment: typeof minimizedScope[number]['segments'][number];
+    }> = [];
+
+    for (const item of minimizedScope) {
+      for (const seg of item.segments) {
+        flatSegments.push({ evidenceDisplayId: item.evidenceDisplayId, segment: seg });
+      }
+    }
+
+    let allCandidates: unknown[] = [];
+    let totalTokensIn = 0;
+    let totalTokensOut = 0;
+
+    if (flatSegments.length <= CHUNK_SIZE) {
+      // Single call for small evidence scopes
+      const renderedPrompt = promptDef
+        ? promptDef.build({ scope: minimizedScope })
+        : {
+            system: 'You are an extraction engine for DataTrace.',
+            user: `Task: extract candidate findings from ${minimizedScope.length} minimized evidence items.`,
+          };
+
+      const canonicalReq = {
+        taskType: task.task_type,
+        schema: { name: task.schema_name, version: task.schema_version },
+        prompt: {
+          id: promptDef?.id ?? promptId,
+          version: promptDef?.version ?? promptVersion,
+        },
+        evidenceScope: minimizedScope,
+        minimizedInput: {
+          mode: 'MINIMIZE',
+          counts: scopeResult.metadata.counts,
+        },
+        renderedPrompt,
+      };
+
+      const providerResp = await this.provider.analyze(canonicalReq);
+      allCandidates = providerResp.candidates ?? [];
+      totalTokensIn = providerResp.rawProviderMetadata?.tokensIn ?? 0;
+      totalTokensOut = providerResp.rawProviderMetadata?.tokensOut ?? 0;
+    } else {
+      // Chunked extraction: process in slices to guarantee staying under rate & token limits
+      for (let i = 0; i < flatSegments.length; i += CHUNK_SIZE) {
+        const chunk = flatSegments.slice(i, i + CHUNK_SIZE);
+        const chunkScopeMap = new Map<string, Array<typeof chunk[0]['segment']>>();
+        for (const item of chunk) {
+          const list = chunkScopeMap.get(item.evidenceDisplayId) ?? [];
+          list.push(item.segment);
+          chunkScopeMap.set(item.evidenceDisplayId, list);
+        }
+
+        const chunkScope = Array.from(chunkScopeMap.entries()).map(([displayId, segs]) => ({
+          evidenceDisplayId: displayId,
+          segments: segs,
+        }));
+
+        const renderedPrompt = promptDef
+          ? promptDef.build({ scope: chunkScope })
+          : {
+              system: 'You are an extraction engine for DataTrace.',
+              user: `Task: extract candidate findings from ${chunkScope.length} minimized evidence items.`,
+            };
+
+        const canonicalReq = {
+          taskType: task.task_type,
+          schema: { name: task.schema_name, version: task.schema_version },
+          prompt: {
+            id: promptDef?.id ?? promptId,
+            version: promptDef?.version ?? promptVersion,
+          },
+          evidenceScope: chunkScope,
+          minimizedInput: {
+            mode: 'MINIMIZE',
+            counts: scopeResult.metadata.counts,
+          },
+          renderedPrompt,
         };
 
-    // 4. Invoke provider with minimized scope and metadata
-    const canonicalReq = {
-      taskType: task.task_type,
-      schema: { name: task.schema_name, version: task.schema_version },
-      prompt: {
-        id: promptDef?.id ?? promptId,
-        version: promptDef?.version ?? promptVersion,
-      },
-      evidenceScope: minimizedScope,
-      minimizedInput: {
-        mode: 'MINIMIZE',
-        counts: scopeResult.metadata.counts,
-      },
-      renderedPrompt,
-    };
-
-    const providerResp = await this.provider.analyze(canonicalReq);
+        const providerResp = await this.provider.analyze(canonicalReq);
+        if (Array.isArray(providerResp.candidates)) {
+          allCandidates.push(...providerResp.candidates);
+        }
+        totalTokensIn += providerResp.rawProviderMetadata?.tokensIn ?? 0;
+        totalTokensOut += providerResp.rawProviderMetadata?.tokensOut ?? 0;
+      }
+    }
 
     // 5. Detokenize returned candidates to restore masked placeholders locally (§15.2)
     const detokenizedCandidates = detokenizeDeep(
-      providerResp.candidates,
+      allCandidates,
       scopeResult.placeholders
     );
 
@@ -213,13 +281,13 @@ export class RealGatewayAdapter implements AIGatewayInterface {
 
     const outputJson = JSON.stringify(validated_output);
     const output_sha256 = createHash('sha256').update(outputJson, 'utf8').digest('hex');
-    const latency_ms = providerResp.rawProviderMetadata?.latencyMs ?? Date.now() - start;
+    const latency_ms = Date.now() - start;
 
     return {
       validated_output,
       output_sha256,
-      tokens_in: providerResp.rawProviderMetadata?.tokensIn ?? 0,
-      tokens_out: providerResp.rawProviderMetadata?.tokensOut ?? 0,
+      tokens_in: totalTokensIn,
+      tokens_out: totalTokensOut,
       latency_ms,
       fallback_used: false,
     };

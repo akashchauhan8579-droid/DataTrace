@@ -113,19 +113,28 @@ export function createGrokProvider({
           }
 
           if (!res.ok) {
-            if (res.status === 429) {
-              throw new ProviderError('RATE_LIMIT', `Rate limit exceeded (HTTP 429)`, true);
+            let detail = '';
+            try {
+              const errText = await res.text();
+              const errObj = JSON.parse(errText);
+              detail = errObj?.error?.message || errText;
+            } catch {
+              detail = '';
+            }
+
+            if (res.status === 429 || res.status === 413 || detail.toLowerCase().includes('rate limit') || detail.toLowerCase().includes('too large') || detail.toLowerCase().includes('tokens')) {
+              throw new ProviderError('RATE_LIMIT', detail || `Rate or token limit exceeded (HTTP ${res.status})`, true);
             }
             if (res.status === 401 || res.status === 403) {
-              throw new ProviderError('AUTH', `Authentication failed (HTTP ${res.status})`, false);
+              throw new ProviderError('AUTH', detail || `Authentication failed (HTTP ${res.status})`, false);
             }
             if (res.status >= 500 && res.status < 600) {
-              throw new ProviderError('SERVER', `Server error (HTTP ${res.status})`, true);
+              throw new ProviderError('SERVER', detail || `Server error (HTTP ${res.status})`, true);
             }
             if (res.status >= 400 && res.status < 500) {
-              throw new ProviderError('BAD_REQUEST', `Bad request (HTTP ${res.status})`, false);
+              throw new ProviderError('BAD_REQUEST', detail || `Bad request (HTTP ${res.status})`, false);
             }
-            throw new ProviderError('SERVER', `Unexpected HTTP status ${res.status}`, true);
+            throw new ProviderError('SERVER', detail || `Unexpected HTTP status ${res.status}`, true);
           }
 
           let responseJson: unknown;

@@ -80,10 +80,12 @@ export class MockGateway implements AIGatewayInterface {
         break;
 
       case 'contradiction_consolidation':
-        validated_output = {
-          contradictions: [],
-          note: '[MOCK] No mechanical contradictions found in this stub run.',
-        };
+        // The mock cannot produce real CONTRADICTION candidates because valid
+        // claimARef/claimBRef values must reference existing persisted findings
+        // (FND-NNN display IDs) — which don't exist at mock time. Return an
+        // empty candidates list so the task succeeds cleanly with 0 results,
+        // exactly as the real prompt does when no contradictions are found.
+        validated_output = { candidates: [] };
         break;
 
       case 'report_draft':

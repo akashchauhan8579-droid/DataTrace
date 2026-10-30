@@ -377,9 +377,13 @@ export const analysisRoutes: RouteDef[] = [
       }
 
       // 5. Default task pipeline if not specified (only queue registered prompts)
+      // NOTE: contradiction_consolidation needs VERIFIED findings to reference via
+      // claimARef/claimBRef. Running it in parallel with extraction means it always
+      // sees 0 verified claims and fails. Default pipeline = extraction only.
+      // Users can trigger contradiction_consolidation explicitly as a follow-up pass.
       const taskTypes = input.taskTypes && input.taskTypes.length > 0
         ? input.taskTypes
-        : ['extraction', 'contradiction_consolidation'];
+        : ['extraction'];
 
       const provider = process.env.AI_PROVIDER || 'mock';
       const model = process.env.GROQ_MODEL || process.env.AI_MODEL || 'qwen/qwen3.8-27b';

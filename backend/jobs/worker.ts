@@ -25,6 +25,57 @@ function errorMessage(error: unknown): string {
  * input to the evidence scope recorded on the task, and commits results with
  * their audit event in one database transaction.
  */
+function normalizeCandidate(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw;
+  const candidate = { ...(raw as Record<string, unknown>) };
+
+  if (!candidate.evidenceBasis && candidate.basis) {
+    candidate.evidenceBasis = candidate.basis;
+  }
+  if (!candidate.evidenceBasis) {
+    candidate.evidenceBasis = 'INFERRED';
+  }
+
+  const rawCitations = Array.isArray(candidate.citations)
+    ? candidate.citations
+    : Array.isArray(candidate.evidence)
+      ? candidate.evidence
+      : [];
+
+  candidate.citations = rawCitations.map((item: unknown) => {
+    if (typeof item !== 'object' || item === null) return item;
+    const c = item as Record<string, unknown>;
+    return {
+      evidenceDisplayId: c.evidenceDisplayId || c.displayId,
+      segmentOrdinal: typeof c.segmentOrdinal === 'number' ? c.segmentOrdinal : (typeof c.ordinal === 'number' ? c.ordinal : 1),
+      locatorType: c.locatorType || 'CHAR_RANGE',
+      locator: (typeof c.locator === 'object' && c.locator !== null) ? c.locator : {},
+      quotedText: typeof c.quotedText === 'string' ? c.quotedText : (typeof c.text === 'string' ? c.text : undefined),
+    };
+  });
+
+  if (!candidate.statement || typeof candidate.statement !== 'string') {
+    const payload = candidate.structuredPayload as Record<string, unknown> | undefined;
+    if (candidate.findingType === 'ENTITY') {
+      candidate.statement = `Identified entity: ${payload?.name ?? 'Unknown entity'}`;
+    } else if (candidate.findingType === 'CLAIM') {
+      const nc = payload?.normalizedClaim as { subject?: string; predicate?: string; object?: string } | undefined;
+      candidate.statement = nc && nc.subject && nc.predicate && nc.object
+        ? `${nc.subject} ${nc.predicate} ${nc.object}`
+        : ((candidate.citations as Array<{ quotedText?: string }>)[0]?.quotedText || 'Extracted claim');
+    } else if ((candidate.citations as Array<{ quotedText?: string }>)[0]?.quotedText) {
+      candidate.statement = (candidate.citations as Array<{ quotedText?: string }>)[0].quotedText!.slice(0, 500);
+    } else {
+      candidate.statement = `Extracted ${candidate.findingType || 'finding'}`;
+    }
+  }
+
+  delete candidate.basis;
+  delete candidate.evidence;
+
+  return candidate;
+}
+
 export class AnalysisWorker {
   private readonly admin;
   private readonly gateway: AIGatewayInterface;
@@ -329,7 +380,8 @@ export class AnalysisWorker {
       if (
         task.task_type === 'extraction' ||
         task.task_type === 'response_analysis' ||
-        task.task_type === 'friction_analysis'
+        task.task_type === 'friction_analysis' ||
+        task.task_type === 'contradiction_consolidation'
       ) {
         insertedFindingIds = await this.persistFindings(
           run.case_id,
@@ -368,6 +420,7 @@ export class AnalysisWorker {
     console.log(`[Worker] Task ${task.id} COMPLETED (latency=${result.latency_ms ?? 0}ms)`);
   }
 
+
   private async persistFindings(
     caseId: string,
     taskId: string,
@@ -390,9 +443,10 @@ export class AnalysisWorker {
     const insertedIds: string[] = [];
     try {
       for (const rawCandidate of candidates) {
-        const parsed = parseCandidate(rawCandidate);
+        const normalized = normalizeCandidate(rawCandidate);
+        const parsed = parseCandidate(normalized);
         if (!parsed.ok) {
-          console.warn(`[Worker] Rejected malformed candidate in task ${taskId}: ${parsed.reason}`);
+          console.warn(`[Worker] Rejected malformed candidate in task ${taskId}: ${parsed.reason} (${parsed.detail})`);
           continue;
         }
         const candidate = parsed.value;

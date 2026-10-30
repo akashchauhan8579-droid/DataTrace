@@ -63,6 +63,8 @@ export default function CaseDashboardPage() {
         if (run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'CANCELLED') {
           setActiveRunId(null);
           setAnalyzing(false);
+          await queryClient.invalidateQueries({ queryKey: queryKeys.findings(caseId) });
+          await queryClient.invalidateQueries({ queryKey: queryKeys.runs(caseId) });
           await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
         }
       } catch {
@@ -86,8 +88,17 @@ export default function CaseDashboardPage() {
       setHasConsent(true);
 
       const res = await api.analysis.start(caseId);
-      setActiveRunId(res.runId);
+
+      // Tasks run inline on the server so the run may already be complete by
+      // the time we get a response. Invalidate findings, runs, and the case
+      // root immediately so all counters refresh without waiting for polling.
+      await queryClient.invalidateQueries({ queryKey: queryKeys.findings(caseId) });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.runs(caseId) });
       await queryClient.invalidateQueries({ queryKey: queryKeys.case(caseId) });
+
+      // Still set activeRunId so the polling effect can pick up any tasks
+      // that are still in-flight (e.g. slow provider calls).
+      setActiveRunId(res.runId);
     } catch (err: any) {
       setStartError(err.message || 'Failed to authorize and start analysis run');
       setAnalyzing(false);
@@ -95,7 +106,9 @@ export default function CaseDashboardPage() {
   };
 
   const verifiedCount = findings.filter((f) => f.verification_state === 'VERIFIED').length;
-  const inferredCount = findings.filter((f) => f.verification_state === 'AI_INFERRED').length;
+  const inferredCount = findings.filter(
+    (f) => f.verification_state === 'AI_INFERRED' || f.evidence_basis === 'INFERRED' || f.verification_state === 'UNVERIFIED'
+  ).length;
   const contradictionCount = findings.filter((f) => f.finding_type === 'CONTRADICTION').length;
 
   return (

@@ -61,8 +61,15 @@ const SYSTEM = [
   '- Do not state legal conclusions and do not cite or invent legal articles or deadlines.',
   '- Extract only what the segments say. If there is nothing to extract, return { "candidates": [] }.',
   '',
-  'OUTPUT',
-  'Output only JSON of the form { "candidates": [...] } that matches the output JSON schema supplied with this request. No prose, no markdown, no code fences.',
+  'OUTPUT FORMAT',
+  'Output only JSON of the form { "candidates": [...] } with exact field names:',
+  '- statement: string (e.g. "Acme Corp deletes personal data")',
+  '- evidenceBasis: "DIRECT" | "INFERRED" | "CONFLICTING"',
+  '- findingType: "CLAIM" | "ENTITY" | "EVENT" | "REQUEST" | "RESPONSE" | "DATA_CATEGORY" | "RELATIONSHIP"',
+  '- candidateConfidence: number (e.g. 0.85)',
+  '- structuredPayload: object matching findingType (e.g. { normalizedClaim: ... } for CLAIM, or { name: "...", entityType: "CONTROLLER" } for ENTITY)',
+  '- citations: array of { evidenceDisplayId: string, segmentOrdinal: number, locatorType: string, locator: object, quotedText: string }',
+  'Example: { "candidates": [{ "statement": "Xbox live controller", "evidenceBasis": "DIRECT", "findingType": "ENTITY", "candidateConfidence": 0.9, "structuredPayload": { "name": "Xbox", "entityType": "CONTROLLER" }, "citations": [{ "evidenceDisplayId": "EV-101", "segmentOrdinal": 1, "locatorType": "CHAR_RANGE", "locator": { "start": 0, "end": 45 }, "quotedText": "Xbox" }] }] }',
 ].join('\n');
 
 function build(input: PromptInput): { system: string; user: string } {

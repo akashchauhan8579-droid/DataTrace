@@ -77,6 +77,9 @@ const footerMarkers = [
   'sent from my',
 ];
 
+const zeroWidthPattern = /[\u00AD\u200B-\u200D\u200E\u200F\u2028\u2029\uFEFF]+/g;
+const longUrlPattern = /https?:\/\/\S{100,}/g;
+
 const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const phoneCandidatePattern = /(?<![\d+])\+?\d[\d\s().-]{7,}\d(?!\d)/g;
 const cardCandidatePattern = /(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g;
@@ -186,6 +189,11 @@ function minimizeText(
   // Strip large base64 data blobs to prevent HTTP 413 token blowup
   result = result.replace(/data:[^;]+;base64,[A-Za-z0-9+/=]{60,}/g, '[REDACTED_IMAGE_DATA]');
   result = result.replace(/\b[A-Za-z0-9+/=]{250,}\b/g, '[REDACTED_BINARY_BLOB]');
+
+  // Strip zero-width junk and long tracking URLs to prevent token bloat
+  result = result.replace(zeroWidthPattern, '');
+  result = result.replace(/\u00A0/g, ' ');
+  result = result.replace(longUrlPattern, '[LINK]');
 
   result = result.replace(/\bAuthorization\s*:\s*[^\r\n]*/gi, () => {
     state.counters.secretsStripped += 1;
