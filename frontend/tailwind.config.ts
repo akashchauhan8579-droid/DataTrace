@@ -9,10 +9,11 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        paper: '#EFEBE2',
-        'paper-2': '#E6E1D6',
-        ink: '#1B1814',
-        'muted-ink': '#6B645A',
+        paper: '#F2E9D0',
+        'paper-2': '#E9DFC4',
+        'paper-card': '#EDE3C8',
+        ink: '#1C1A17',
+        'muted-ink': '#5E574A',
         night: '#0C0B0A',
         'night-2': '#151311',
         'on-night': '#EDE6DA',
@@ -26,7 +27,7 @@ const config: Config = {
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
       },
       borderColor: {
-        hairline: 'rgba(27,24,20,0.14)',
+        hairline: 'rgba(140,120,76,0.22)',
       },
     },
   },

@@ -1,6 +1,6 @@
 /* =========================================================
    DATATRACE NEUMORPHIC AUTH THEME
-   Warm Ivory Parchment (--paper: #EFEBE2) & Copper (--copper: #B5562F)
+   Warm Ivory Parchment (--paper: #F2E9D0) & Copper (--copper: #B5562F)
 ========================================================= */
 
 .login-page-container {
@@ -10,7 +10,7 @@
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    background: #EFEBE2;
+    background: #F2E9D0;
     overflow-x: clip;
     position: relative;
     padding: 24px;
@@ -136,7 +136,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background: #EFEBE2;
+    background: #F2E9D0;
     box-shadow:
         -20px -20px 45px #FFFFFF,
         22px 22px 48px #D0C9BA,
@@ -250,7 +250,7 @@
     padding: 0 16px 0 44px;
     border: none;
     outline: none;
-    background: #EFEBE2;
+    background: #F2E9D0;
     color: #1B1814;
     font-family: 'Inter', sans-serif;
     font-size: 13.5px;
@@ -312,7 +312,7 @@
     width: 32px;
     height: 18px;
     border-radius: 20px;
-    background: #EFEBE2;
+    background: #F2E9D0;
     box-shadow:
         inset 3px 3px 6px rgba(195, 187, 173, 0.55),
         inset -3px -3px 6px rgba(255, 255, 255, 0.9);
@@ -329,7 +329,7 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: #EFEBE2;
+    background: #F2E9D0;
     box-shadow: 1px 1px 3px rgba(27, 24, 20, 0.25);
     transition: left .25s ease, background .25s ease;
 }
@@ -378,7 +378,7 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: #5A5349;
-    background: #EFEBE2;
+    background: #F2E9D0;
     box-shadow:
         -6px -6px 12px #FFFFFF,
          6px 6px 12px #D0C9BA;

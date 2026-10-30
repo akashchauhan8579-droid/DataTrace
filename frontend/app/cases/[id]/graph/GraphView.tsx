@@ -420,7 +420,7 @@ export default function GraphView({ caseId }: { caseId: string }) {
                         y={midY - 10}
                         width={80}
                         height={20}
-                        fill="#EFEBE2"
+                        fill="#F2E9D0"
                         stroke="#1B1814"
                         strokeWidth={0.5}
                         rx={2}
@@ -451,7 +451,7 @@ export default function GraphView({ caseId }: { caseId: string }) {
                   const isSubject = node.category === 'SUBJECT';
                   const isContradiction = node.category === 'CONTRADICTION';
 
-                  let fillBg = '#EFEBE2';
+                  let fillBg = '#F2E9D0';
                   let strokeBorder = '#1B1814';
 
                   if (isController) {
@@ -490,7 +490,7 @@ export default function GraphView({ caseId }: { caseId: string }) {
                         x={pos.x}
                         y={pos.y - 10}
                         textAnchor="middle"
-                        fill={isController || isSubject ? '#EFEBE2' : '#6B645A'}
+                        fill={isController || isSubject ? '#F2E9D0' : '#6B645A'}
                         fontSize={7.5}
                         fontFamily="monospace"
                         fontWeight="700"
